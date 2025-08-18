@@ -260,6 +260,14 @@
           TOTAL_BASIC = 10,
           TOTAL_ARMORED = 10;
         const DEV_GOD_MODE = true; // <- bật/tắt bất tử cho người chơi
+        // ===== Vietnam scheme colors =====
+        const VN_COL = {
+          green: "#2d4b2b", // olive green
+          green2: "#3a5b37", // nhạt hơn 1 chút cho mảng rằn ri
+          dark: "#1d3320", // viền tối
+          star: "#ffd34d", // vàng ngôi sao
+          flagR: "#d62828", // đỏ cờ
+        };
 
         // ===== Sound toggle helpers =====
         function loadSoundPref() {
@@ -1336,6 +1344,68 @@
           ctx.lineTo(cx, cy - outer);
           ctx.closePath();
         }
+
+        // ===== Player Vietnam decals (star & flag) =====
+        function drawVNDecals(t, x, y) {
+          // x,y: góc trái–trên của thân (đã trừ gap ở phần body)
+          const bodyW = t.size - 2 * Math.max(4, Math.floor(t.size * 0.14)); // đúng bằng khối thân bạn vẽ
+          const bodyH = bodyW;
+
+          // 1) Ngôi sao vàng ở hông (cố định, không xoay theo nòng)
+          const cx = x + bodyW * 0.3;
+          const cy = y + bodyH * 0.5;
+          const starOuter = Math.max(6, Math.floor(t.size * 0.12));
+          const starInner = Math.max(3, Math.floor(starOuter * 0.45));
+          // viền tối nhỏ
+          ctx.fillStyle = VN_COL.dark;
+          drawStar(cx, cy, 5, starOuter + 2, starInner + 1);
+          ctx.fill();
+          // sao vàng
+          ctx.fillStyle = VN_COL.star;
+          drawStar(cx, cy, 5, starOuter, starInner);
+          ctx.fill();
+
+          // 2) Cờ đỏ sao vàng trên cột ăng-ten phía sau
+          const poleH = Math.max(18, Math.floor(t.size * 0.85));
+          const poleX = x + bodyW * 0.82;
+          const poleY = y - Math.max(6, Math.floor(t.size * 0.18));
+          // cột
+          ctx.strokeStyle = "#bfbfbf";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(poleX, poleY);
+          ctx.lineTo(poleX, poleY - poleH);
+          ctx.stroke();
+
+          // cờ (phấp phới nhẹ theo thời gian)
+          const now = performance.now() / 1000;
+          const wave = Math.sin(now * 6) * 3; // biên độ sóng
+          const fw = Math.max(16, Math.floor(t.size * 0.9));
+          const fh = Math.max(10, Math.floor(t.size * 0.45));
+          const fx = poleX + 2;
+          const fy = poleY - poleH + fh / 2;
+
+          ctx.fillStyle = VN_COL.flagR;
+          ctx.beginPath();
+          ctx.moveTo(fx, fy - fh / 2);
+          ctx.lineTo(fx + fw * 0.5, fy - fh / 2 + wave);
+          ctx.lineTo(fx + fw, fy + fh / 2 - wave);
+          ctx.lineTo(fx + fw * 0.5, fy + fh / 2);
+          ctx.closePath();
+          ctx.fill();
+
+          // sao nhỏ trên nền cờ
+          ctx.fillStyle = VN_COL.star;
+          drawStar(
+            fx + fw * 0.45,
+            fy,
+            5,
+            Math.max(5, Math.floor(fh * 0.35)),
+            Math.max(2, Math.floor(fh * 0.17))
+          );
+          ctx.fill();
+        }
+
         function draw() {
           ctx.clearRect(0, 0, W, H);
           ctx.fillStyle = "#0b3d2e";
@@ -1487,9 +1557,53 @@
             }
 
             // THÂN
-            ctx.fillStyle = bodyCol;
-            roundRect(x + gap, y + gap, t.size - gap * 2, t.size - gap * 2, 6);
-            ctx.fill();
+            if (t.isPlayer) {
+              // nền olive
+              ctx.fillStyle = VN_COL.green;
+              roundRect(
+                x + gap,
+                y + gap,
+                t.size - gap * 2,
+                t.size - gap * 2,
+                6
+              );
+              ctx.fill();
+
+              // mảng rằn ri (2–3 dải xiên)
+              ctx.fillStyle = VN_COL.green2;
+              const bx = x + gap,
+                by = y + gap,
+                bw = t.size - gap * 2,
+                bh = bw;
+              ctx.beginPath();
+              ctx.moveTo(bx, by + bh * 0.25);
+              ctx.lineTo(bx + bw * 0.55, by);
+              ctx.lineTo(bx + bw * 0.85, by + bh * 0.18);
+              ctx.lineTo(bx + bw * 0.3, by + bh * 0.38);
+              ctx.closePath();
+              ctx.fill();
+              ctx.beginPath();
+              ctx.moveTo(bx + bw * 0.15, by + bh * 0.7);
+              ctx.lineTo(bx + bw * 0.7, by + bh * 0.45);
+              ctx.lineTo(bx + bw * 0.95, by + bh * 0.62);
+              ctx.lineTo(bx + bw * 0.38, by + bh * 0.86);
+              ctx.closePath();
+              ctx.fill();
+
+              // decal Việt Nam (sao & cờ)
+              drawVNDecals(t, x + gap, y + gap);
+            } else {
+              // địch giữ nguyên màu cũ
+              ctx.fillStyle = bodyCol;
+              roundRect(
+                x + gap,
+                y + gap,
+                t.size - gap * 2,
+                t.size - gap * 2,
+                6
+              );
+              ctx.fill();
+            }
 
             // NÒNG SÚNG
             ctx.fillStyle = "#333";
