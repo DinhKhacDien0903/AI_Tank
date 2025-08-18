@@ -389,8 +389,22 @@
                 }
 
                 // Update player
-                if (pl) { let dx = 0, dy = 0; if (S.keys.up) { dy -= 1; pl.dir = 'up'; } if (S.keys.down) { dy += 1; pl.dir = 'down'; } if (S.keys.left) { dx -= 1; pl.dir = 'left'; } if (S.keys.right) { dx += 1; pl.dir = 'right'; } const len = Math.hypot(dx, dy) || 1; const step = (pl.speed * dt) / len; tryMove(pl, dx * step, dy * step); if (S.keys.shoot) shoot(pl); }
+                if (pl) {
+                    let dx = 0, dy = 0;
 
+                    // Ưu tiên trục dọc nếu đang giữ Up/Down; nếu không thì xét Left/Right.
+                    if (S.keys.up || S.keys.down) {
+                        dy = S.keys.up ? -1 : 1;
+                        pl.dir = S.keys.up ? 'up' : 'down';
+                    } else if (S.keys.left || S.keys.right) {
+                        dx = S.keys.left ? -1 : 1;
+                        pl.dir = S.keys.left ? 'left' : 'right';
+                    }
+
+                    const step = pl.speed * dt;
+                    tryMove(pl, dx * step, dy * step);
+                    if (S.keys.shoot) shoot(pl);
+                }
                 // Update enemies
                 for (const t of S.tanks) {
                     if (!t.active || t.isPlayer) continue; if (now >= t.ai.next) { t.ai.next = now + t.ai.think; const pl = getPlayer(); if (pl && Math.random() < 0.6) { const pg = toGrid(pl.x, pl.y), eg = toGrid(t.x, t.y); if (pg.gx === eg.gx) t.dir = (pg.gy < eg.gy ? 'up' : 'down'); else if (pg.gy === eg.gy) t.dir = (pg.gx < eg.gx ? 'left' : 'right'); else if (Math.random() < 0.5) t.dir = (pg.gx < eg.gx ? 'left' : 'right'); else t.dir = (pg.gy < eg.gy ? 'up' : 'down'); } else if (Math.random() < 0.4) { t.dir = choice(DIRS); } if (Math.random() < 0.55) shoot(t); }
