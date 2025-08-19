@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>War of Tank - Dinh Khac Dien</title>
+    <title>81 ngày đêm bảo vệ thành cổ Quảng Trị</title>
     <style>
       :root {
         --bg: #0b1220;
@@ -290,37 +290,87 @@
           updateVolumeUI && updateVolumeUI();
         }
         // ===== Smoke helpers =====
-        function spawnSmoke(x, y, dir, isBig = false) {
-          // khói xuất hiện ngay phía sau xe
-          const life = isBig ? 0.7 : 0.45; // giây
-          const ang =
-            dir === "up"
-              ? Math.PI / 2
-              : dir === "down"
-              ? -Math.PI / 2
-              : dir === "left"
-              ? 0
-              : Math.PI; // bay tỏa nhẹ ra sau
-          const speed = isBig ? 28 : 22;
-          const spread = 0.9;
-          S.smokes.push({
-            x,
-            y,
-            vx: Math.cos(ang) * speed * (0.6 + Math.random() * 0.8),
-            vy: Math.sin(ang) * speed * (0.6 + Math.random() * 0.8),
-            life,
-            max: life,
-            r: isBig ? 6 : 4,
-          });
+        // ===== Smoke helpers (player-only, realistic) =====
+        // Hạt khói: lớn dần, bay ngược hướng xe + nổi lên (buoyancy).
+        // Mỗi hạt có 2–3 lớp màu để nhìn “mềm” hơn.
+        function spawnPlayerSmoke(tank) {
+          // 2 ống xả ở cuối thân, lệch 2 bên
+          const back = tank.size * 0.38; // lùi về phía sau tháp/xe
+          const offset = tank.size * 0.18; // lệch trái/phải
+          const spots = [];
+
+          if (tank.dir === "up") {
+            spots.push({ x: tank.x - offset, y: tank.y + back });
+            spots.push({ x: tank.x + offset, y: tank.y + back });
+          } else if (tank.dir === "down") {
+            spots.push({ x: tank.x - offset, y: tank.y - back });
+            spots.push({ x: tank.x + offset, y: tank.y - back });
+          } else if (tank.dir === "left") {
+            spots.push({ x: tank.x + back, y: tank.y - offset });
+            spots.push({ x: tank.x + back, y: tank.y + offset });
+          } else {
+            // right
+            spots.push({ x: tank.x - back, y: tank.y - offset });
+            spots.push({ x: tank.x - back, y: tank.y + offset });
+          }
+
+          // hướng khói bắn ra theo chiều ngược của xe + nhiễu nhẹ
+          for (const sp of spots) {
+            // Giảm thời gian tồn tại: ~0.30–0.50s (trước ~0.55–0.8s)
+            const life = 0.3 + Math.random() * 0.2;
+            const baseSpeed = 26 + Math.random() * 10;
+            let vx = 0,
+              vy = 0;
+            if (tank.dir === "up") {
+              vx = (Math.random() - 0.5) * 10;
+              vy = baseSpeed;
+            }
+            if (tank.dir === "down") {
+              vx = (Math.random() - 0.5) * 10;
+              vy = -baseSpeed;
+            }
+            if (tank.dir === "left") {
+              vx = baseSpeed;
+              vy = (Math.random() - 0.5) * 10;
+            }
+            if (tank.dir === "right") {
+              vx = -baseSpeed;
+              vy = (Math.random() - 0.5) * 10;
+            }
+
+            S.smokes.push({
+              x: sp.x,
+              y: sp.y,
+              vx,
+              vy,
+              ax: (Math.random() - 0.5) * 3.2, // nhiễu ngang nhẹ hơn chút
+              ay: -18, // nổi lên
+              life,
+              max: life,
+              // Thu hẹp bán kính & tốc độ nở
+              r: 1.8 + Math.random() * 1.2, // trước: 3–5
+              grow: 8 + Math.random() * 6, // trước: 16–26
+              layers: 3,
+              // Màu xám nhẹ hơn (không còn đen sẫm)
+              c0: "rgba(70,70,70,",
+              c1: "rgba(160,165,170,",
+              c2: "rgba(220,225,230,",
+            });
+          }
         }
+
         function updateSmokes(dt) {
           for (let i = S.smokes.length - 1; i >= 0; i--) {
             const s = S.smokes[i];
             s.life -= dt;
+            // vận tốc + nổi lên
+            s.vx += s.ax * dt;
+            s.vy += s.ay * dt;
             s.x += s.vx * dt;
             s.y += s.vy * dt;
-            s.vx *= 1 - 0.8 * dt;
-            s.vy *= 1 - 0.8 * dt;
+            s.r += s.grow * dt; // lớn dần
+            // giảm nhiễu theo thời gian
+            s.ax *= 1 - 1.8 * dt;
             if (s.life <= 0) S.smokes.splice(i, 1);
           }
         }
@@ -699,6 +749,7 @@
             hasBullet: false,
             trackPhase: 0, // pha xích (0..1)
             trackOn: false, // có đang chạy không
+            _smokeTimer: 0,
           };
         }
 
@@ -1129,23 +1180,18 @@
             // đánh dấu đang chạy & cập nhật pha xích
             pl.trackOn = dx !== 0 || dy !== 0;
             if (pl.trackOn) {
-              // phase tăng theo quãng đường (tốc độ * dt), wrap 0..1
               pl.trackPhase =
                 (pl.trackPhase + (pl.speed * dt) / (TILE * 0.5)) % 1;
-              // spawn khói nhịp chậm khi chạy
-              if (Math.random() < 0.25) {
-                // điểm sau đuôi xe (lùi 1/3 size theo hướng ngược lại)
-                const back = pl.size / 3;
-                let sx = pl.x,
-                  sy = pl.y;
-                if (pl.dir === "up") sy += back;
-                else if (pl.dir === "down") sy -= back;
-                else if (pl.dir === "left") sx += back;
-                else if (pl.dir === "right") sx -= back;
-                spawnSmoke(sx, sy, pl.dir, false);
+
+              // Sinh khói theo nhịp đều (mặc định ~16 fps): mỗi 0.06s một đợt 2 hạt từ 2 ống xả
+              pl._smokeTimer += dt;
+              const cadence = 0.06; // chỉnh dày/loãng khói
+              while (pl._smokeTimer >= cadence) {
+                pl._smokeTimer -= cadence;
+                spawnPlayerSmoke(pl);
               }
             } else {
-              // đứng yên thì reset chậm để xích dừng “đúng rãnh”
+              pl._smokeTimer = 0;
               pl.trackPhase = pl.trackPhase * 0.9;
             }
 
@@ -1180,16 +1226,6 @@
             t.trackOn = moved;
             if (t.trackOn) {
               t.trackPhase = (t.trackPhase + (t.speed * dt) / (TILE * 0.5)) % 1;
-              if (Math.random() < 0.12) {
-                const back = t.size / 3;
-                let sx = t.x,
-                  sy = t.y;
-                if (t.dir === "up") sy += back;
-                else if (t.dir === "down") sy -= back;
-                else if (t.dir === "left") sx += back;
-                else if (t.dir === "right") sx -= back;
-                spawnSmoke(sx, sy, t.dir, false);
-              }
             } else {
               t.trackPhase = t.trackPhase * 0.9;
             }
@@ -1284,6 +1320,7 @@
           }
           // cập nhật explosions
           S.explosions = S.explosions.filter((e) => now - e.start < e.duration);
+          updateSmokes(dt);
         }
 
         function releaseOwner(id) {
@@ -1492,130 +1529,213 @@
             ctx.fill();
           }
 
-          // smokes (vẽ dưới xe)
+          // smokes (player only) — vẽ dưới xe
           for (const s of S.smokes) {
-            const a = Math.max(0, s.life / s.max);
-            ctx.globalAlpha = 0.25 * a + 0.05;
-            const rad = s.r * (1 + 0.6 * (1 - a));
-            const grd = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, rad);
-            grd.addColorStop(0, "rgba(200,200,200," + (0.5 * a + 0.1) + ")");
-            grd.addColorStop(1, "rgba(200,200,200,0)");
-            ctx.fillStyle = grd;
+            const k = Math.max(0, s.life / s.max); // 1 -> 0
+            const baseR = Math.max(2, s.r);
+            const R = baseR * (1 + 0.6 * (1 - k)); // lớn dần ít hơn
+            const squash = 1 + 0.25 * (1 - k); // elip nhẹ
+
+            // Lớp 1: lõi tối
+            ctx.globalAlpha = 0.18 + 0.22 * k;
+            ctx.fillStyle = s.c0 + (0.8 * k + 0.1) + ")";
             ctx.beginPath();
-            ctx.arc(s.x, s.y, rad, 0, Math.PI * 2);
+            ctx.ellipse(s.x, s.y, R * 0.7, R * 0.7 * squash, 0, 0, Math.PI * 2);
             ctx.fill();
+
+            // Lớp 2: xám xanh
+            ctx.globalAlpha = 0.15 + 0.18 * k;
+            ctx.fillStyle = s.c1 + (0.5 * k + 0.1) + ")";
+            ctx.beginPath();
+            ctx.ellipse(s.x, s.y, R, R * squash, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Lớp 3: viền sáng nhạt
+            ctx.globalAlpha = 0.1 + 0.12 * k;
+            ctx.fillStyle = s.c2 + 0.35 * k + ")";
+            ctx.beginPath();
+            ctx.ellipse(
+              s.x,
+              s.y,
+              R * 1.25,
+              R * 1.25 * squash,
+              0,
+              0,
+              Math.PI * 2
+            );
+            ctx.fill();
+
             ctx.globalAlpha = 1;
           }
 
-          // tanks
-          // tanks (thân + xích)
+          // tanks (xích hài hòa + thân + tháp pháo tròn + decal Việt Nam cho player)
           for (const t of S.tanks) {
             if (!t.active) continue;
-            const x = t.x - t.size / 2,
-              y = t.y - t.size / 2;
-            const bodyCol = t.isPlayer
-              ? "#66ff66"
-              : t.kind === "armored"
-              ? "#ff6b6b"
-              : "#f0ad4e";
 
-            // XÍCH: hai dải hai bên (theo trục đứng / ngang tùy hướng)
+            const x = t.x - t.size / 2;
+            const y = t.y - t.size / 2;
+
+            // màu thân cho địch (player sẽ override bằng VN_COL)
+            const enemyBody = t.kind === "armored" ? "#ff6b6b" : "#f0ad4e";
+
+            // ---------- XÍCH (màu hài hòa) ----------
             const trackW = Math.max(6, Math.floor(t.size * 0.22));
-            const gap = Math.max(4, Math.floor(t.size * 0.14)); // khoảng cách từ mép vào thân
-            ctx.fillStyle = "#222";
+            const rungStep = 6;
+            const rungOffset = Math.floor((t.trackPhase || 0) * rungStep);
+            const trackBase = t.isPlayer ? VN_COL.dark : "#2b2b2b";
+            const trackRung = t.isPlayer ? "#2f4030" : "#444";
 
-            // vị trí dải xích
+            ctx.fillStyle = trackBase;
+
             if (t.dir === "up" || t.dir === "down") {
               // dọc: xích trái/phải
               ctx.fillRect(x, y, trackW, t.size);
               ctx.fillRect(x + t.size - trackW, y, trackW, t.size);
 
-              // hoa văn xích cuộn theo trackPhase
-              const stride = 6; // bước răng xích
-              const off = Math.floor((t.trackPhase || 0) * stride);
-              ctx.fillStyle = "#444";
-              for (let yy = y - off; yy < y + t.size + stride; yy += stride) {
-                // răng xích trái
-                ctx.fillRect(x + 1, yy, trackW - 2, 2);
-                // răng xích phải
-                ctx.fillRect(x + t.size - trackW + 1, yy, trackW - 2, 2);
+              // răng xích cuộn
+              ctx.fillStyle = trackRung;
+              for (
+                let yy = y - rungOffset;
+                yy < y + t.size + rungStep;
+                yy += rungStep
+              ) {
+                ctx.fillRect(x + 1, yy, trackW - 2, 2); // trái
+                ctx.fillRect(x + t.size - trackW + 1, yy, trackW - 2, 2); // phải
               }
             } else {
               // ngang: xích trên/dưới
               ctx.fillRect(x, y, t.size, trackW);
               ctx.fillRect(x, y + t.size - trackW, t.size, trackW);
 
-              const stride = 6;
-              const off = Math.floor((t.trackPhase || 0) * stride);
-              ctx.fillStyle = "#444";
-              for (let xx = x - off; xx < x + t.size + stride; xx += stride) {
-                // răng xích trên
-                ctx.fillRect(xx, y + 1, 2, trackW - 2);
-                // răng xích dưới
-                ctx.fillRect(xx, y + t.size - trackW + 1, 2, trackW - 2);
+              ctx.fillStyle = trackRung;
+              for (
+                let xx = x - rungOffset;
+                xx < x + t.size + rungStep;
+                xx += rungStep
+              ) {
+                ctx.fillRect(xx, y + 1, 2, trackW - 2); // trên
+                ctx.fillRect(xx, y + t.size - trackW + 1, 2, trackW - 2); // dưới
               }
             }
 
-            // THÂN
+            // ---------- THÂN ----------
+            const gap = Math.max(4, Math.floor(t.size * 0.14)); // lề vào thân
+            const bx = x + gap,
+              by = y + gap,
+              bw = t.size - gap * 2,
+              bh = bw;
+
             if (t.isPlayer) {
-              // nền olive
+              // nền olive VN + rằn ri
               ctx.fillStyle = VN_COL.green;
-              roundRect(
-                x + gap,
-                y + gap,
-                t.size - gap * 2,
-                t.size - gap * 2,
-                6
+              roundRect(bx, by, bw, bh, 6);
+              ctx.fill();
+
+              ctx.fillStyle = VN_COL.green2; // 2 mảng rằn ri nhẹ
+              ctx.beginPath();
+              ctx.moveTo(bx, by + bh * 0.26);
+              ctx.lineTo(bx + bw * 0.52, by + bh * 0.06);
+              ctx.lineTo(bx + bw * 0.84, by + bh * 0.2);
+              ctx.lineTo(bx + bw * 0.34, by + bh * 0.4);
+              ctx.closePath();
+              ctx.fill();
+
+              ctx.beginPath();
+              ctx.moveTo(bx + bw * 0.12, by + bh * 0.7);
+              ctx.lineTo(bx + bw * 0.68, by + bh * 0.48);
+              ctx.lineTo(bx + bw * 0.94, by + bh * 0.63);
+              ctx.lineTo(bx + bw * 0.36, by + bh * 0.86);
+              ctx.closePath();
+              ctx.fill();
+
+              // ----- Ngôi sao căn giữa thân -----
+              const cx = bx + bw * 0.5;
+              const cy = by + bh * 0.5;
+              const starOuter = Math.max(6, Math.floor(t.size * 0.12));
+              const starInner = Math.max(3, Math.floor(starOuter * 0.45));
+              // viền tối mảnh để nổi bật
+              ctx.fillStyle = VN_COL.dark;
+              drawStar(cx, cy, 5, starOuter + 2, starInner + 1);
+              ctx.fill();
+              // sao vàng
+              ctx.fillStyle = VN_COL.star;
+              drawStar(cx, cy, 5, starOuter, starInner);
+              ctx.fill();
+
+              // ----- Cột cờ phía sau–trái (vị trí hợp lý hơn) -----
+              const poleH = Math.max(18, Math.floor(t.size * 0.85));
+              const poleX = bx + bw * 0.12; // sát góc sau–trái
+              const poleY = by - Math.max(6, Math.floor(t.size * 0.18));
+              ctx.strokeStyle = "#bfbfbf";
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              ctx.moveTo(poleX, poleY);
+              ctx.lineTo(poleX, poleY - poleH);
+              ctx.stroke();
+
+              // Lá cờ phấp phới
+              const now = performance.now() / 1000;
+              const wave = Math.sin(now * 6) * 3;
+              const fw = Math.max(16, Math.floor(t.size * 0.9));
+              const fh = Math.max(10, Math.floor(t.size * 0.45));
+              const fx = poleX + 2;
+              const fy = poleY - poleH + fh / 2;
+
+              ctx.fillStyle = VN_COL.flagR;
+              ctx.beginPath();
+              ctx.moveTo(fx, fy - fh / 2);
+              ctx.lineTo(fx + fw * 0.5, fy - fh / 2 + wave);
+              ctx.lineTo(fx + fw, fy + fh / 2 - wave);
+              ctx.lineTo(fx + fw * 0.5, fy + fh / 2);
+              ctx.closePath();
+              ctx.fill();
+
+              ctx.fillStyle = VN_COL.star;
+              drawStar(
+                fx + fw * 0.45,
+                fy,
+                5,
+                Math.max(5, Math.floor(fh * 0.35)),
+                Math.max(2, Math.floor(fh * 0.17))
               );
               ctx.fill();
-
-              // mảng rằn ri (2–3 dải xiên)
-              ctx.fillStyle = VN_COL.green2;
-              const bx = x + gap,
-                by = y + gap,
-                bw = t.size - gap * 2,
-                bh = bw;
-              ctx.beginPath();
-              ctx.moveTo(bx, by + bh * 0.25);
-              ctx.lineTo(bx + bw * 0.55, by);
-              ctx.lineTo(bx + bw * 0.85, by + bh * 0.18);
-              ctx.lineTo(bx + bw * 0.3, by + bh * 0.38);
-              ctx.closePath();
-              ctx.fill();
-              ctx.beginPath();
-              ctx.moveTo(bx + bw * 0.15, by + bh * 0.7);
-              ctx.lineTo(bx + bw * 0.7, by + bh * 0.45);
-              ctx.lineTo(bx + bw * 0.95, by + bh * 0.62);
-              ctx.lineTo(bx + bw * 0.38, by + bh * 0.86);
-              ctx.closePath();
-              ctx.fill();
-
-              // decal Việt Nam (sao & cờ)
-              drawVNDecals(t, x + gap, y + gap);
             } else {
-              // địch giữ nguyên màu cũ
-              ctx.fillStyle = bodyCol;
-              roundRect(
-                x + gap,
-                y + gap,
-                t.size - gap * 2,
-                t.size - gap * 2,
-                6
-              );
+              // địch giữ màu cũ
+              ctx.fillStyle = enemyBody;
+              roundRect(bx, by, bw, bh, 6);
               ctx.fill();
             }
 
-            // NÒNG SÚNG
-            ctx.fillStyle = "#333";
-            const barrel = Math.max(10, Math.floor(t.size * 0.32));
-            if (t.dir === "up") ctx.fillRect(t.x - 3, y - 6, 6, barrel);
-            if (t.dir === "down")
-              ctx.fillRect(t.x - 3, y + t.size - barrel + 6, 6, barrel);
-            if (t.dir === "left") ctx.fillRect(x - 6, t.y - 3, barrel, 6);
-            if (t.dir === "right")
-              ctx.fillRect(x + t.size - barrel + 6, t.y - 3, barrel, 6);
+            // ---------- THÁP PHÁO TRÒN + NÒNG SÚNG ----------
+            // tháp pháo nằm trên thân, nòng xuất phát từ tâm tháp pháo (t.x, t.y)
+            const turretOuter = t.size * 0.28;
+            const turretInner = t.size * 0.22;
+            const barrelLen = Math.max(12, Math.floor(t.size * 0.35));
 
-            // HP nhỏ ở đuôi
+            // viền tối của tháp
+            ctx.fillStyle = t.isPlayer ? VN_COL.dark : "#333";
+            ctx.beginPath();
+            ctx.arc(t.x, t.y, turretOuter, 0, Math.PI * 2);
+            ctx.fill();
+            // mặt tháp
+            ctx.fillStyle = t.isPlayer ? VN_COL.green : enemyBody;
+            ctx.beginPath();
+            ctx.arc(t.x, t.y, turretInner, 0, Math.PI * 2);
+            ctx.fill();
+
+            // nòng súng (dày nhẹ để cân đối)
+            ctx.fillStyle = "#2e2e2e";
+            const bwid = 6;
+            if (t.dir === "up")
+              ctx.fillRect(t.x - bwid / 2, t.y - barrelLen, bwid, barrelLen);
+            if (t.dir === "down")
+              ctx.fillRect(t.x - bwid / 2, t.y, bwid, barrelLen);
+            if (t.dir === "left")
+              ctx.fillRect(t.x - barrelLen, t.y - bwid / 2, barrelLen, bwid);
+            if (t.dir === "right")
+              ctx.fillRect(t.x, t.y - bwid / 2, barrelLen, bwid);
+
+            // ---------- HP nhỏ ở đuôi ----------
             ctx.fillStyle = "#000";
             for (let i = 0; i < t.hp; i++)
               ctx.fillRect(x + 4 + i * 6, y + t.size - 10, 4, 6);
