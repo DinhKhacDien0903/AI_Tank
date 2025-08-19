@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>81 ngày đêm bảo vệ thành cổ Quảng Trị</title>
+    <title>🔥 81 Ngày Đêm Bảo Vệ Thành Cổ Quảng Trị 1972</title>
     <style>
       :root {
         --bg: #0b1220;
@@ -179,7 +179,7 @@
 
   <body>
     <div class="wrap">
-      <h1>Tank 1990 — Single Level (Vanilla JS)</h1>
+      <h1>🔥 81 Ngày Đêm Bảo Vệ Thành Cổ Quảng Trị 1972</h1>
       <div class="hud">
         <div class="row">
           <span class="pill">Lives: <b id="uiLives">3</b></span>
@@ -334,9 +334,107 @@
           S.riverPath = {
             points: pts,
             width: visualWidth,
-            wave: { amplitude: 2.0, spacing: 28, speed: 0.7 }, // cấu hình sóng tượng trưng
+            wave: { amplitude: 1.0, spacing: 36, speed: 0.35 },
           };
         }
+        // Tạo một cây cầu vuông góc với dòng chảy tại điểm giữa đoạn i..i+1 của path
+        function makeBridgeAt(pts, i, walkWidth = TILE * 1.25, span = null) {
+          const a = pts[i],
+            b = pts[i + 1];
+          if (!a || !b) return null;
+          let dx = b.x - a.x,
+            dy = b.y - a.y;
+          const len = Math.hypot(dx, dy) || 1;
+          dx /= len;
+          dy /= len;
+          let nx = -dy,
+            ny = dx;
+
+          const riverW = (S.riverPath?.width || TILE) * 1.1; // trùm mép nhiều hơn
+          const L = span ?? riverW + TILE * 1.6; // dài hơn để nhìn cân
+
+          const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+          const p1 = { x: mid.x - (nx * L) / 2, y: mid.y - (ny * L) / 2 };
+          const p2 = { x: mid.x + (nx * L) / 2, y: mid.y + (ny * L) / 2 };
+          return { a: p1, b: p2, width: walkWidth };
+        }
+
+        // Thêm vài cây cầu rải dọc sông
+        function buildRiverBridges() {
+          S.bridges = [];
+          if (!S.riverPath?.points?.length) return;
+          const pts = S.riverPath.points;
+          const idx = [
+            Math.floor(pts.length * 0.15), // cầu đầu xa hơn về bên trái
+            Math.floor(pts.length * 0.5), // cầu giữa trung tâm
+            Math.floor(pts.length * 0.85),
+          ];
+          for (const i of idx) {
+            const br = makeBridgeAt(
+              pts,
+              Math.max(0, Math.min(pts.length - 2, i))
+            );
+            if (br) S.bridges.push(br);
+          }
+        }
+
+        // Vẽ cầu (ván gỗ + cọc)
+        function drawBridges() {
+          if (!S.bridges?.length) return;
+          ctx.save();
+          ctx.lineCap = "round";
+          for (const br of S.bridges) {
+            // vector cầu
+            const vx = br.b.x - br.a.x,
+              vy = br.b.y - br.a.y;
+            const ang = Math.atan2(vy, vx);
+            const L = Math.hypot(vx, vy);
+
+            ctx.translate(br.a.x, br.a.y);
+            ctx.rotate(ang);
+
+            // bóng cầu
+            ctx.fillStyle = "rgba(0,0,0,0.25)";
+            roundRect(0, -br.width * 0.55, L, br.width * 1.1, 6);
+            ctx.fill();
+
+            // mặt ván
+            const g = ctx.createLinearGradient(
+              0,
+              -br.width / 2,
+              0,
+              br.width / 2
+            );
+            g.addColorStop(0, "#9c7b52");
+            g.addColorStop(1, "#6f5236");
+            ctx.fillStyle = g;
+            roundRect(0, -br.width / 2, L, br.width, 8);
+            ctx.lineWidth = 2.5;
+            ctx.fill();
+
+            // các nan ván
+            ctx.strokeStyle = "rgba(0,0,0,0.25)";
+            ctx.lineWidth = 2;
+            for (let x = 10; x < L; x += 12) {
+              ctx.beginPath();
+              ctx.moveTo(x, -br.width / 2 + 3);
+              ctx.lineTo(x, br.width / 2 - 3);
+              ctx.stroke();
+            }
+
+            // cọc nhỏ hai đầu
+            ctx.fillStyle = "#5a402c";
+            const peg = br.width * 0.25;
+            roundRect(-4, -peg / 2, 8, peg, 3);
+            ctx.fill();
+            roundRect(L - 4, -peg / 2, 8, peg, 3);
+            ctx.fill();
+
+            ctx.setTransform(1, 0, 0, 1, 0, 0); // reset transform cho cầu kế
+          }
+          ctx.restore();
+        }
+
         // --- Geometry helpers ---
         function distPointToSegment(px, py, ax, ay, bx, by) {
           const abx = bx - ax,
@@ -463,6 +561,81 @@
         }
 
         // ===== Vẽ dải sông cong theo S.riverPath =====
+        function drawRiverLabel() {
+          const rp = S.riverPath;
+          if (!rp?.points || rp.points.length < 4) return;
+
+          const text = "SÔNG THẠCH HÃN";
+          const pts = rp.points;
+
+          // Kích thước nhỏ hơn, font bo tròn
+          const fontSize = Math.max(12, Math.floor((rp.width || TILE) * 0.35));
+          ctx.font = `700 ${fontSize}px "Baloo 2","Nunito", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif`;
+          ctx.textBaseline = "middle";
+          ctx.fillStyle = "rgba(233,246,255,0.88)";
+          ctx.strokeStyle = "rgba(0,0,0,0.40)";
+          ctx.lineWidth = Math.max(1.5, fontSize * 0.1);
+
+          // Tính tổng chiều dài đoạn path (theo toàn sông)
+          let total = 0;
+          const segLen = [];
+          for (let i = 0; i < pts.length - 1; i++) {
+            const L = Math.hypot(
+              pts[i + 1].x - pts[i].x,
+              pts[i + 1].y - pts[i].y
+            );
+            segLen.push(L);
+            total += L;
+          }
+
+          // Vị trí trung tâm chữ theo tỉ lệ (0..1) — có clamp để tránh sát mép
+          const margin = Math.max(40, ctx.measureText(text).width * 0.6);
+          const minPos = margin / total;
+          const maxPos = 1 - minPos;
+          const tCenter = Math.max(
+            minPos,
+            Math.min(maxPos, S.riverLabelPos ?? 0.5)
+          );
+
+          // Hàm lấy điểm tại khoảng cách dọc path
+          function pointAtDist(dist) {
+            let acc = 0;
+            for (let i = 0; i < segLen.length; i++) {
+              const L = segLen[i];
+              if (acc + L >= dist) {
+                const t = (dist - acc) / L;
+                const a = pts[i],
+                  b = pts[i + 1];
+                return {
+                  x: a.x + (b.x - a.x) * t,
+                  y: a.y + (b.y - a.y) * t,
+                  ang: Math.atan2(b.y - a.y, b.x - a.x),
+                };
+              }
+              acc += L;
+            }
+            const a = pts[pts.length - 2],
+              b = pts[pts.length - 1];
+            return { x: b.x, y: b.y, ang: Math.atan2(b.y - a.y, b.x - a.x) };
+          }
+
+          // Vẽ chữ uốn theo sông: đi từng ký tự theo path
+          const textW = ctx.measureText(text).width;
+          const startDist = tCenter * total - textW / 2;
+          let d = startDist;
+          for (const ch of text) {
+            const w = ctx.measureText(ch).width;
+            const mid = pointAtDist(d + w / 2);
+            ctx.save();
+            ctx.translate(mid.x, mid.y);
+            ctx.rotate(mid.ang);
+            ctx.strokeText(ch, 0, 0);
+            ctx.fillText(ch, 0, 0);
+            ctx.restore();
+            d += w;
+          }
+        }
+
         function drawCurvedRiverRibbon() {
           if (
             !S.riverPath ||
@@ -482,8 +655,8 @@
 
           // Gradient dọc canvas nhẹ (xanh sâu -> xanh sáng)
           const g = ctx.createLinearGradient(0, 0, 0, H);
-          g.addColorStop(0, "#144b63");
-          g.addColorStop(1, "#2aa1d3");
+          g.addColorStop(0, "#18506a");
+          g.addColorStop(1, "#2497c6");
           ctx.strokeStyle = g;
           ctx.lineWidth = width;
 
@@ -496,12 +669,12 @@
           //    dùng nhiều nét dashed mảnh chạy dọc theo path, offset theo thời gian.
           const { amplitude, spacing, speed } = S.riverPath.wave;
           ctx.setLineDash([spacing, spacing]);
-          ctx.lineDashOffset = -t * speed * 120; // trôi từ trái -> phải
+          ctx.lineDashOffset = -t * speed * 60; // trôi từ trái -> phải
 
           // Vẽ 3 dải highlight song song với thân nước (dịch lệch vào/ra)
-          const waveWidths = [2.5, 2, 1.5];
-          const waveAlpha = [0.42, 0.3, 0.22];
-          const offsets = [-width * 0.18, 0, width * 0.18]; // lệch sang 2 bên bờ + giữa
+          const waveWidths = [1.6, 1.2];
+          const waveAlpha = [0.26, 0.18];
+          const offsets = [-width * 0.16, width * 0.16]; // lệch sang 2 bên bờ + giữa
 
           for (let k = 0; k < offsets.length; k++) {
             ctx.beginPath();
@@ -518,7 +691,8 @@
               ny /= len;
 
               // rung nhè nhẹ theo sin để sóng “gợn”
-              const wiggle = Math.sin(i * 0.12 + t * 2.0 + k) * amplitude;
+              const wiggle =
+                Math.sin(i * 0.12 + t * 1.4 + k) * (amplitude * 0.7);
               const ox = nx * (offsets[k] + wiggle);
               const oy = ny * (offsets[k] + wiggle);
               if (i === 0) ctx.moveTo(p.x + ox, p.y + oy);
@@ -901,6 +1075,16 @@
           tanks: [], // player + enemies
           bullets: [],
           bridges: [],
+          riverLabelPos: 0.32,
+          wind: {
+            // trạng thái gió toàn cục
+            phase: 0, // pha chạy
+            value: 0, // giá trị gió hiện tại (px dịch ngang)
+            speed: 0.65, // tốc độ gió (điều chỉnh nhanh/chậm)
+            base: 5.0, // biên độ gió cơ bản (px)
+            gusting: false, // có đang có “cơn gió mạnh” không
+            gustUntil: 0, // thời điểm kết thúc gust
+          },
           keys: {
             up: false,
             down: false,
@@ -978,6 +1162,7 @@
             visualWidth: TILE * 1.25, // dải vẽ mảnh hơn tile-band
           });
           S.bridges = [];
+          buildRiverBridges();
           // Steel clusters
           [
             [2, 2],
@@ -1389,8 +1574,33 @@
           }
           requestAnimationFrame(loop);
         }
+        function updateWind(dt, now) {
+          const W = S.wind;
+          W.phase += dt * W.speed;
+
+          // thỉnh thoảng thổi gió mạnh 1.5–3 giây
+          if (!W.gusting && Math.random() < dt * 0.05) {
+            W.gusting = true;
+            W.gustUntil = now + 1500 + Math.random() * 1500;
+          }
+          if (W.gusting && now >= W.gustUntil) W.gusting = false;
+
+          const base = Math.sin(W.phase) * W.base;
+          const gust = W.gusting ? Math.sin(W.phase * 2.2) * (W.base * 0.9) : 0;
+          W.value = base + gust; // giá trị gió dùng để lắc bụi cây
+        }
+
+        // gió tại một ô nhất định (cho cảm giác nhiễu nhẹ theo vị trí)
+        function windAtTile(gx, gy, layer = 1) {
+          // lệch pha theo grid để bụi không lắc y hệt nhau
+          const phaseJitter = gx * 0.35 + gy * 0.22 + layer * 0.9;
+          return (
+            S.wind.value * (0.6 + 0.4 * Math.sin(S.wind.phase + phaseJitter))
+          );
+        }
 
         function update(dt, now) {
+          updateWind(dt, now);
           // Items schedule
           if (S.itemPlan.stars.length && now >= S.itemPlan.stars[0]) {
             S.itemPlan.stars.shift();
@@ -1901,6 +2111,159 @@
           const flagY = ty - size * 0.45;
           drawFlag(ctx, flagX, flagY, size * 0.55, size * 0.28, time, 3, 2);
         }
+        // RNG theo (gx, gy) để bụi cây mỗi ô hơi khác nhau nhưng cố định
+        function rngFromGrid(gx, gy) {
+          let s = (gx * 73856093) ^ (gy * 19349663);
+          s ^= s << 13;
+          s ^= s >>> 17;
+          s ^= s << 5;
+          return function () {
+            s ^= s << 13;
+            s ^= s >>> 17;
+            s ^= s << 5;
+            return (s >>> 0) / 4294967295;
+          };
+        }
+        // Vẽ 1 “lá/lobe” mềm theo hướng angle
+        function drawLeafLobe(cx, cy, r, angle) {
+          const w = r * 0.85; // dài lá
+          const h = r * 0.55; // bề ngang
+          const tip = w; // đầu lá
+          const sway = 0.15 * r; // độ cong thân lá
+
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate(angle);
+
+          // bóng dưới lá (rất nhẹ)
+          ctx.fillStyle = "rgba(0,0,0,0.10)";
+          ctx.beginPath();
+          ctx.ellipse(0, h * 0.4, w * 0.9, h * 0.35, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // thân lá: xanh sáng -> xanh đậm
+          const grad = ctx.createLinearGradient(0, 0, w, 0);
+          grad.addColorStop(0.0, "#b6e07a");
+          grad.addColorStop(0.5, "#6fbe56");
+          grad.addColorStop(1.0, "#2e7f32");
+          ctx.fillStyle = grad;
+
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.quadraticCurveTo(w * 0.35, -sway, tip, 0); // mép trên
+          ctx.quadraticCurveTo(w * 0.35, sway, 0, 0); // mép dưới quay về gốc
+          ctx.closePath();
+          ctx.fill();
+
+          // gân lá mảnh
+          ctx.strokeStyle = "rgba(255,255,255,0.28)";
+          ctx.lineWidth = Math.max(1, r * 0.08);
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.quadraticCurveTo(w * 0.45, 0, tip, 0);
+          ctx.stroke();
+
+          ctx.restore();
+        }
+
+        // Vẽ 1 “cụm bụi” (nhiều lobe) — có đung đưa theo gió
+        function drawBushBlob(cx, cy, r, swayX, rndAngleOffset = 0) {
+          // bóng đổ của cả cụm
+          ctx.fillStyle = "rgba(0,0,0,0.22)";
+          ctx.beginPath();
+          ctx.ellipse(
+            cx + swayX * 0.25,
+            cy + r * 0.55,
+            r * 1.05,
+            r * 0.35,
+            0,
+            0,
+            Math.PI * 2
+          );
+          ctx.fill();
+
+          // nhóm lá: vẽ từ nhỏ -> lớn để có chiều sâu
+          const count = 12; // số lá
+          for (let i = 0; i < count; i++) {
+            const t = (i + 1) / count;
+            const rr = r * (0.55 + t * 0.55); // bán kính lá
+            const ang = rndAngleOffset + i * ((Math.PI * 2) / count);
+            const localTilt = swayX * 0.02; // xoay nhẹ theo gió
+            drawLeafLobe(
+              cx + swayX * (0.25 + 0.35 * t) + Math.cos(ang) * r * 0.06,
+              cy - r * 0.08 * (1 - t),
+              rr,
+              ang + localTilt
+            );
+          }
+
+          // highlight viền ngoài rất nhẹ
+          ctx.strokeStyle = "rgba(255,255,255,0.20)";
+          ctx.lineWidth = Math.max(1, r * 0.1);
+          ctx.beginPath();
+          ctx.arc(cx + swayX * 0.25, cy - r * 0.1, r * 0.85, -0.2, 1.0);
+          ctx.stroke();
+        }
+
+        // Vẽ 1 tile bụi (gọi nhiều blob + sway theo gió từng lớp)
+        function drawBushTile(gx, gy, x, y, size) {
+          const rnd = rngFromGrid(gx, gy); // ổn định theo ô
+          const cx = x + size * 0.5;
+          const cy = y + size * 0.62;
+
+          // gió tại tile + nhiễu nhỏ giữa các lớp
+          const swayBase = windAtTile(gx, gy, 1); // px
+          const sway1 = swayBase * (0.9 + rnd() * 0.2);
+          const sway2 = swayBase * (0.6 + rnd() * 0.2);
+          const sway3 = swayBase * (0.35 + rnd() * 0.2);
+
+          const R = size * 0.5;
+
+          // cụm sau xa nhất
+          drawBushBlob(
+            cx,
+            cy - size * 0.08,
+            R * (0.7 + rnd() * 0.1),
+            sway3,
+            rnd() * Math.PI * 2
+          );
+
+          // cụm sau
+          drawBushBlob(
+            cx - size * 0.04,
+            cy - size * 0.03,
+            R * (0.9 + rnd() * 0.1),
+            sway3,
+            rnd() * Math.PI * 2
+          );
+
+          // cụm giữa
+          drawBushBlob(
+            cx + size * 0.06,
+            cy + rnd() * size * 0.02,
+            R * (1.0 + rnd() * 0.12),
+            sway2,
+            rnd() * Math.PI * 2
+          );
+
+          // cụm trước (to nhất)
+          drawBushBlob(
+            cx - size * 0.08,
+            cy,
+            R * (1.2 + rnd() * 0.15),
+            sway1,
+            rnd() * Math.PI * 2
+          );
+
+          // cụm trước phụ (bổ sung cho rậm)
+          drawBushBlob(
+            cx + size * 0.04,
+            cy + size * 0.05,
+            R * (1.1 + rnd() * 0.1),
+            sway1,
+            rnd() * Math.PI * 2
+          );
+        }
 
         function draw() {
           ctx.clearRect(0, 0, W, H);
@@ -1908,6 +2271,8 @@
           ctx.fillStyle = getGroundPattern(ctx);
           ctx.fillRect(0, 0, W, H);
           drawCurvedRiverRibbon();
+          drawRiverLabel();
+          drawBridges();
           for (let gy = 0; gy < GRID; gy++) {
             for (let gx = 0; gx < GRID; gx++) {
               const t = S.map[gy][gx];
@@ -2192,13 +2557,7 @@
             const [gx, gy] = key.split(",").map(Number);
             const x = gx * TILE,
               y = gy * TILE;
-            ctx.fillStyle = "#3fa34d";
-            roundRect(x + 2, y + 2, TILE - 4, TILE - 4, 6);
-            ctx.fill();
-            ctx.globalAlpha = 0.25;
-            ctx.fillStyle = "#fff";
-            ctx.fillRect(x + 6, y + 6, TILE - 12, TILE - 12);
-            ctx.globalAlpha = 1;
+            drawBushTile(gx, gy, x, y, TILE);
           }
           if (S.status === "won" || S.status === "lost") {
             /* overlay already shows text */
