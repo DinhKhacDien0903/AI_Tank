@@ -22,7 +22,8 @@
 
       body {
         margin: 0;
-        background: linear-gradient(180deg, #0b1220, #0b3d2e);
+        /* Nền hoàng hôn khói bụi: nâu đậm -> nâu đất */
+        background: linear-gradient(180deg, #11100e, #2a261b);
         color: var(--text);
         font: 14px/1.4 system-ui, Segoe UI, Roboto, Helvetica, Arial;
       }
@@ -269,6 +270,267 @@
           flagR: "#d62828", // đỏ cờ
         };
 
+        // ===== Ground pattern (đất trận địa) =====
+        let GROUND_PATTERN = null;
+        function getGroundPattern(ctx) {
+          if (GROUND_PATTERN) return GROUND_PATTERN;
+
+          // Tạo 1 tile 64x64 rồi lặp
+          const p = document.createElement("canvas");
+          p.width = p.height = 64;
+          const pc = p.getContext("2d");
+
+          // Nâu đất nền
+          pc.fillStyle = "#2a261b";
+          pc.fillRect(0, 0, 64, 64);
+
+          // Hạt bụi vàng cát rất mờ rải ngẫu nhiên
+          pc.globalAlpha = 0.06;
+          pc.fillStyle = "#b8a76a";
+          for (let i = 0; i < 120; i++) {
+            pc.fillRect(Math.random() * 64, Math.random() * 64, 1, 1);
+          }
+          pc.globalAlpha = 1;
+
+          GROUND_PATTERN = ctx.createPattern(p, "repeat");
+          return GROUND_PATTERN;
+        }
+
+        // Vignette tối góc cho cảm giác khói bụi đậm ở rìa
+        function drawVignette(ctx, w, h) {
+          const rg = ctx.createRadialGradient(
+            w / 2,
+            h * 0.55,
+            w * 0.2,
+            w / 2,
+            h * 0.55,
+            w * 0.85
+          );
+          rg.addColorStop(0, "rgba(0,0,0,0)");
+          rg.addColorStop(1, "rgba(0,0,0,0.35)");
+          ctx.fillStyle = rg;
+          ctx.fillRect(0, 0, w, h);
+        }
+
+        // ===== Thạch Hãn River: carve tiles by a horizontal sine-band =====
+        // ===== Curved River: build a smooth ribbon path (no tile marking) =====
+        function carveCurvedRiver(opts = {}) {
+          // Tham số theo TILE để dễ hình dung
+          const baseY = opts.baseY ?? 7; // đường trung tâm (đơn vị hàng tile)
+          const amp = opts.amp ?? 1.5; // độ uốn (tile)
+          const freq = opts.freq ?? 0.55; // nhịp uốn theo cột gx
+          const phase = opts.phase ?? 0.0; // dịch pha
+          const visualWidth = opts.visualWidth ?? TILE * 1.2; // bề rộng vẽ (px), mảnh
+
+          // Lấy mẫu theo px để tạo polyline cong mượt chạy ngang bản đồ
+          const pts = [];
+          const stepPx = 8; // 8px/mẫu là đủ mượt
+          for (let x = 0; x <= W; x += stepPx) {
+            const gx = x / TILE;
+            const yTiles = baseY + Math.sin(phase + gx * freq) * amp;
+            const y = yTiles * TILE + TILE / 2;
+            pts.push({ x, y });
+          }
+          S.riverPath = {
+            points: pts,
+            width: visualWidth,
+            wave: { amplitude: 2.0, spacing: 28, speed: 0.7 }, // cấu hình sóng tượng trưng
+          };
+        }
+        // --- Geometry helpers ---
+        function distPointToSegment(px, py, ax, ay, bx, by) {
+          const abx = bx - ax,
+            aby = by - ay;
+          const apx = px - ax,
+            apy = py - ay;
+          const ab2 = abx * abx + aby * aby || 1;
+          let t = (apx * abx + apy * aby) / ab2;
+          t = Math.max(0, Math.min(1, t));
+          const cx = ax + abx * t,
+            cy = ay + aby * t;
+          return Math.hypot(px - cx, py - cy);
+        }
+
+        // Điểm (px,py) có nằm TRONG dải sông cong?
+        function isInRiver(px, py) {
+          const rp = S.riverPath;
+          if (!rp || !rp.points || rp.points.length < 2) return false;
+          const halfW = (rp.width || 24) / 2;
+          for (let i = 0; i < rp.points.length - 1; i++) {
+            const a = rp.points[i],
+              b = rp.points[i + 1];
+            if (distPointToSegment(px, py, a.x, a.y, b.x, b.y) <= halfW)
+              return true;
+          }
+          return false;
+        }
+
+        // Cầu (bridge) – danh sách đoạn thẳng + bề rộng cho phép đi qua
+        // S.bridges = S.bridges || [];
+        function isOnBridge(px, py) {
+          for (const br of S.bridges) {
+            const d = distPointToSegment(
+              px,
+              py,
+              br.a.x,
+              br.a.y,
+              br.b.x,
+              br.b.y
+            );
+            if (d <= br.width / 2) return true;
+          }
+          return false;
+        }
+
+        // --- Sample points along a tank's rectangular hitbox perimeter ---
+        function sampleRectPerimeter(cx, cy, size) {
+          const half = size / 2;
+          const left = cx - half,
+            right = cx + half;
+          const top = cy - half,
+            bottom = cy + half;
+
+          // Mật độ mẫu vừa phải: mỗi ~1/4 cạnh + 4 góc
+          const step = Math.max(6, Math.floor(size / 4));
+          const pts = [];
+
+          // Trên & dưới (bao gồm góc)
+          for (let x = left; x <= right; x += step) {
+            pts.push([x, top], [x, bottom]);
+          }
+          // Trái & phải (bỏ góc vì đã có, nên bắt đầu từ top+step)
+          for (let y = top + step; y < bottom; y += step) {
+            pts.push([left, y], [right, y]);
+          }
+          // đảm bảo 4 góc có mặt (phòng khi step không trùng biên chính xác)
+          pts.push([left, top], [right, top], [left, bottom], [right, bottom]);
+
+          return pts;
+        }
+
+        // Có điểm nào của hitbox rơi vào sông KHÔNG nằm trên cầu?
+        function rectTouchesRiver(cx, cy, size) {
+          const pts = sampleRectPerimeter(cx, cy, size);
+          for (const [px, py] of pts) {
+            if (isInRiver(px, py) && !isOnBridge(px, py)) return true;
+          }
+          return false;
+        }
+
+        // ===== Vẽ 1 tile sông với sóng NGANG (foam) động =====
+        function drawThachHanRiverTile(gx, gy, x, y, size) {
+          const t = performance.now() / 1000;
+
+          // Nước: xanh sâu -> xanh sáng (theo chiều dọc tile)
+          const g = ctx.createLinearGradient(x, y, x, y + size);
+          g.addColorStop(0, "#144b63");
+          g.addColorStop(1, "#2aa1d3");
+          ctx.fillStyle = g;
+          ctx.fillRect(x, y, size, size);
+
+          // 3 “cột” sóng chạy NGANG trong một tile
+          // Pha lệch theo (gx,gy) để tránh đồng bộ cứng
+          const basePhase = t * 1.0 + gx * 0.25 + gy * 0.15;
+          ctx.lineWidth = 2;
+
+          for (let i = 0; i < 3; i++) {
+            const colX = x + size * (0.2 + i * 0.3); // 3 dải trong 1 tile
+            const amp = 2 + i * 0.7; // biên độ nhẹ
+            const k = 0.085; // mật độ sóng theo trục Y
+
+            ctx.beginPath();
+            for (let j = 0; j <= 6; j++) {
+              const py = y + (size / 6) * j;
+              const wave = Math.sin(basePhase + py * k + i * 0.9) * amp;
+              const px = colX + wave; // LỆCH THEO TRỤC X => sóng NGANG
+              if (j === 0) ctx.moveTo(px, py);
+              else ctx.lineTo(px, py);
+            }
+            ctx.strokeStyle = "rgba(191,231,250,0.60)"; // bọt sáng
+            ctx.stroke();
+          }
+
+          // vệt bọt mảnh trôi theo chiều nước (trái -> phải)
+          const drift = (t * 36 + gy * 11) % size;
+          ctx.globalAlpha = 0.25;
+          ctx.fillStyle = "rgba(255,255,255,0.18)";
+          ctx.fillRect(x + drift, y + size * 0.3, 2, size * 0.4);
+          ctx.globalAlpha = 1;
+
+          // viền tối nhẹ
+          ctx.strokeStyle = "rgba(0,0,0,0.15)";
+          ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+        }
+
+        // ===== Vẽ dải sông cong theo S.riverPath =====
+        function drawCurvedRiverRibbon() {
+          if (
+            !S.riverPath ||
+            !S.riverPath.points ||
+            S.riverPath.points.length < 2
+          )
+            return;
+          const t = performance.now() / 1000;
+
+          const pts = S.riverPath.points;
+          const width = S.riverPath.width;
+
+          // 1) Thân nước: stroke một đường cong với lineWidth lớn
+          ctx.save();
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+
+          // Gradient dọc canvas nhẹ (xanh sâu -> xanh sáng)
+          const g = ctx.createLinearGradient(0, 0, 0, H);
+          g.addColorStop(0, "#144b63");
+          g.addColorStop(1, "#2aa1d3");
+          ctx.strokeStyle = g;
+          ctx.lineWidth = width;
+
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x, pts[0].y);
+          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+          ctx.stroke();
+
+          // 2) Sóng tượng trưng THEO ĐƯỜNG CONG:
+          //    dùng nhiều nét dashed mảnh chạy dọc theo path, offset theo thời gian.
+          const { amplitude, spacing, speed } = S.riverPath.wave;
+          ctx.setLineDash([spacing, spacing]);
+          ctx.lineDashOffset = -t * speed * 120; // trôi từ trái -> phải
+
+          // Vẽ 3 dải highlight song song với thân nước (dịch lệch vào/ra)
+          const waveWidths = [2.5, 2, 1.5];
+          const waveAlpha = [0.42, 0.3, 0.22];
+          const offsets = [-width * 0.18, 0, width * 0.18]; // lệch sang 2 bên bờ + giữa
+
+          for (let k = 0; k < offsets.length; k++) {
+            ctx.beginPath();
+            // đi lại toàn bộ path, nhưng dịch nhẹ theo pháp tuyến
+            for (let i = 0; i < pts.length; i++) {
+              const p = pts[i];
+              // pháp tuyến xấp xỉ từ đoạn (i-1 -> i+1)
+              const a = pts[Math.max(0, i - 1)];
+              const b = pts[Math.min(pts.length - 1, i + 1)];
+              let nx = b.y - a.y,
+                ny = -(b.x - a.x); // normal ~ (dy, -dx)
+              const len = Math.hypot(nx, ny) || 1;
+              nx /= len;
+              ny /= len;
+
+              // rung nhè nhẹ theo sin để sóng “gợn”
+              const wiggle = Math.sin(i * 0.12 + t * 2.0 + k) * amplitude;
+              const ox = nx * (offsets[k] + wiggle);
+              const oy = ny * (offsets[k] + wiggle);
+              if (i === 0) ctx.moveTo(p.x + ox, p.y + oy);
+              else ctx.lineTo(p.x + ox, p.y + oy);
+            }
+            ctx.strokeStyle = `rgba(191,231,250,${waveAlpha[k]})`;
+            ctx.lineWidth = waveWidths[k];
+            ctx.stroke();
+          }
+
+          ctx.restore();
+        }
         // ===== Sound toggle helpers =====
         function loadSoundPref() {
           try {
@@ -373,6 +635,48 @@
             s.ax *= 1 - 1.8 * dt;
             if (s.life <= 0) S.smokes.splice(i, 1);
           }
+        }
+        // ===== Thạch Hãn River Tile (animated) =====
+        function drawThachHanRiverTile(gx, gy, x, y, size) {
+          const t = performance.now() / 1000;
+
+          // Lớp nước nền: xanh sâu -> xanh sáng (cảm giác dòng chảy)
+          const g = ctx.createLinearGradient(x, y, x, y + size);
+          g.addColorStop(0, "#144b63");
+          g.addColorStop(1, "#2aa1d3");
+          ctx.fillStyle = g;
+          ctx.fillRect(x, y, size, size);
+
+          // Các gợn sóng sáng (foam) lượn nhẹ theo gió, trôi theo dòng
+          // Sóng chạy ngang
+          const basePhase = t * 1.1 + gy * 0.35 + gx * 0.15;
+          for (let i = 0; i < 3; i++) {
+            const colX = x + size * (0.22 + i * 0.28);
+            const amp = 2.0 + i * 0.6;
+            const k = 0.085;
+
+            ctx.beginPath();
+            for (let j = 0; j <= 6; j++) {
+              const py = y + (size / 6) * j;
+              const wave = Math.sin(basePhase + py * k + i * 0.8) * amp;
+              const px = colX + wave;
+              if (j === 0) ctx.moveTo(px, py);
+              else ctx.lineTo(px, py);
+            }
+            ctx.strokeStyle = "rgba(191,231,250,0.60)";
+            ctx.stroke();
+          }
+
+          // Vệt bọt mảnh trôi theo dòng (theo trục dọc), tạo cảm giác có dòng chảy
+          const drift = (t * 28 + gx * 9) % size;
+          ctx.globalAlpha = 0.28;
+          ctx.fillStyle = "rgba(255,255,255,0.18)";
+          ctx.fillRect(x, y + drift, size, 2);
+          ctx.globalAlpha = 1;
+
+          // Viền tối nhẹ để “giữ nước” trong lòng sông
+          ctx.strokeStyle = "rgba(0,0,0,0.15)";
+          ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
         }
 
         // ===== Volume helpers =====
@@ -596,6 +900,7 @@
           baseRings: [],
           tanks: [], // player + enemies
           bullets: [],
+          bridges: [],
           keys: {
             up: false,
             down: false,
@@ -663,9 +968,16 @@
           S.map = emptyMap();
           S.bushSet = new Set();
           // Rivers
-          [5, 9].forEach((rx) => {
-            for (let y = 3; y <= 11; y++) S.map[y][rx] = tile("river");
+          // River (curved, horizontal)
+          carveCurvedRiver({
+            baseY: 7,
+            amp: 1.3, // uốn dịu
+            band: 1.2, // collision hẹp (~2.4 tiles tổng)
+            freq: 0.55,
+            phase: 0.0,
+            visualWidth: TILE * 1.25, // dải vẽ mảnh hơn tile-band
           });
+          S.bridges = [];
           // Steel clusters
           [
             [2, 2],
@@ -798,22 +1110,26 @@
             right = Math.floor((x + half) / TILE),
             top = Math.floor((y - half) / TILE),
             bottom = Math.floor((y + half) / TILE);
+
+          // 1) Nếu bất kỳ phần nào của hitbox chạm sông (không trên cầu) => CHẶN
+          if (rectTouchesRiver(x, y, size)) return true;
+
+          // 2) Các chướng ngại tile-based khác vẫn giữ nguyên
           for (let gy = top; gy <= bottom; gy++) {
             for (let gx = left; gx <= right; gx++) {
               if (!within(gx, gy)) return true;
               const t = S.map[gy][gx];
               if (
                 t &&
-                (t.type === "brick" ||
-                  t.type === "steel" ||
-                  t.type === "river" ||
-                  t.type === "base")
-              )
+                (t.type === "brick" || t.type === "steel" || t.type === "base")
+              ) {
                 return true;
+              }
             }
           }
           return false;
         }
+
         function rectOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
           return (
             Math.abs(ax - bx) * 2 < aw + bw && Math.abs(ay - by) * 2 < ah + bh
@@ -1383,6 +1699,49 @@
         }
 
         // ===== Player Vietnam decals (star & flag) =====
+
+        function drawFlag(
+          ctx,
+          x,
+          y,
+          fw,
+          fh,
+          time,
+          amplitude = 2.5,
+          wavelengthFactor = 2
+        ) {
+          const wavelength = fw / wavelengthFactor;
+
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          for (let i = 0; i <= 40; i++) {
+            const px = x + (fw / 40) * i;
+            const wave = Math.sin(time + px / wavelength) * amplitude;
+            const py = y + wave;
+            ctx.lineTo(px, py);
+          }
+          for (let i = 40; i >= 0; i--) {
+            const px = x + (fw / 40) * i;
+            const wave = Math.sin(time + px / wavelength + 0.3) * amplitude;
+            const py = y + fh + wave;
+            ctx.lineTo(px, py);
+          }
+          ctx.closePath();
+
+          ctx.fillStyle = "#d62828";
+          ctx.fill();
+
+          // Sao vàng ở chính giữa cờ (theo sóng)
+          const midX = x + fw * 0.5;
+          const waveTop = Math.sin(time + midX / wavelength) * amplitude;
+          const waveBot = Math.sin(time + midX / wavelength + 0.3) * amplitude;
+          const midY = y + fh * 0.5 + (waveTop + waveBot) / 2;
+
+          ctx.fillStyle = "#ffd54d";
+          drawStar(midX, midY, 5, fh * 0.35, fh * 0.15);
+          ctx.fill();
+        }
+
         function drawVNDecals(t, x, y) {
           // x,y: góc trái–trên của thân (đã trừ gap ở phần body)
           const bodyW = t.size - 2 * Math.max(4, Math.floor(t.size * 0.14)); // đúng bằng khối thân bạn vẽ
@@ -1443,10 +1802,112 @@
           ctx.fill();
         }
 
+        function drawThanhCoFlat(x, y, size, alive) {
+          if (!alive) {
+            // Nếu base đã bị phá -> khối xám
+            ctx.fillStyle = "#444";
+            roundRect(x + 4, y + 4, size - 8, size - 8, 6);
+            ctx.fill();
+            return;
+          }
+
+          const towerH = size * 0.9;
+          const towerW = size * 0.9;
+          const tx = x + (size - towerW) / 2;
+          const ty = y + (size - towerH) / 2;
+
+          // === Thân thành cổ (nhiều tầng, màu đất đỏ cam loang) ===
+          function fillWall(color1, color2, rx, ry, rw, rh) {
+            // gradient dọc nhẹ
+            const g = ctx.createLinearGradient(rx, ry, rx, ry + rh);
+            g.addColorStop(0, color1);
+            g.addColorStop(1, color2);
+            ctx.fillStyle = g;
+            ctx.fillRect(rx, ry, rw, rh);
+            // điểm loang ngẫu nhiên
+            ctx.fillStyle = "rgba(0,0,0,0.1)";
+            for (let i = 0; i < 4; i++) {
+              ctx.fillRect(
+                rx + Math.random() * rw,
+                ry + Math.random() * rh,
+                2,
+                2
+              );
+            }
+          }
+
+          // tầng dưới
+          fillWall(
+            "#c96e35",
+            "#a85728",
+            tx,
+            ty + towerH * 0.55,
+            towerW,
+            towerH * 0.45
+          );
+          // tầng giữa
+          fillWall(
+            "#d87c40",
+            "#b4652f",
+            tx + towerW * 0.1,
+            ty + towerH * 0.35,
+            towerW * 0.8,
+            towerH * 0.25
+          );
+          // tầng trên
+          fillWall(
+            "#e2924d",
+            "#c67a35",
+            tx + towerW * 0.25,
+            ty + towerH * 0.15,
+            towerW * 0.5,
+            towerH * 0.2
+          );
+
+          // === Mái ngói đỏ có highlight ===
+          ctx.beginPath();
+          ctx.moveTo(tx + towerW * 0.25, ty + towerH * 0.15);
+          ctx.lineTo(tx + towerW * 0.75, ty + towerH * 0.15);
+          ctx.lineTo(tx + towerW * 0.65, ty);
+          ctx.lineTo(tx + towerW * 0.35, ty);
+          ctx.closePath();
+          const roofGrad = ctx.createLinearGradient(
+            tx,
+            ty,
+            tx,
+            ty + towerH * 0.15
+          );
+          roofGrad.addColorStop(0, "#b00");
+          roofGrad.addColorStop(1, "#800");
+          ctx.fillStyle = roofGrad;
+          ctx.fill();
+
+          // === Các cửa sổ nhỏ (chấm đen) ===
+          ctx.fillStyle = "#111";
+          ctx.fillRect(tx + towerW * 0.2, ty + towerH * 0.6, 4, 6);
+          ctx.fillRect(tx + towerW * 0.5, ty + towerH * 0.6, 4, 6);
+          ctx.fillRect(tx + towerW * 0.7, ty + towerH * 0.6, 4, 6);
+
+          // === Cột cờ ===
+          ctx.strokeStyle = "#666";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x + size / 2, ty);
+          ctx.lineTo(x + size / 2, ty - size * 0.45);
+          ctx.stroke();
+
+          const time = performance.now() / 900; // tốc độ chậm
+          const flagX = x + size / 2; // góc trái–trên của lá cờ
+          const flagY = ty - size * 0.45;
+          drawFlag(ctx, flagX, flagY, size * 0.55, size * 0.28, time, 3, 2);
+        }
+
         function draw() {
           ctx.clearRect(0, 0, W, H);
-          ctx.fillStyle = "#0b3d2e";
+          // Nền đất trận địa (pattern nâu đất)
+          ctx.fillStyle = getGroundPattern(ctx);
           ctx.fillRect(0, 0, W, H);
+          drawCurvedRiverRibbon();
           for (let gy = 0; gy < GRID; gy++) {
             for (let gx = 0; gx < GRID; gx++) {
               const t = S.map[gy][gx];
@@ -1454,8 +1915,8 @@
                 y = gy * TILE;
               if (t.type === "empty") {
                 if (((gx + gy) & 1) === 0) {
-                  ctx.globalAlpha = 0.05;
-                  ctx.fillStyle = "#fff";
+                  ctx.globalAlpha = 0.06;
+                  ctx.fillStyle = "#b8a76a"; // nhấn nhá vàng cát rất nhẹ
                   ctx.fillRect(x, y, TILE, TILE);
                   ctx.globalAlpha = 1;
                 }
@@ -1478,20 +1939,9 @@
                 ctx.lineWidth = 2;
                 ctx.stroke();
               } else if (t.type === "river") {
-                ctx.fillStyle = "#2aa1d3";
-                ctx.fillRect(x, y, TILE, TILE);
-                ctx.globalAlpha = 0.35;
-                ctx.fillStyle = "#bfe7fa";
-                ctx.fillRect(x, y + 10, TILE, 4);
-                ctx.fillRect(x, y + 20, TILE, 3);
-                ctx.globalAlpha = 1;
+                // River tile no longer painted per-tile (drawn by ribbon). Do nothing here.
               } else if (t.type === "base") {
-                ctx.fillStyle = S.base.alive ? "#ffd54d" : "#333";
-                roundRect(x + 6, y + 6, TILE - 12, TILE - 12, 6);
-                ctx.fill();
-                ctx.strokeStyle = "#8a6a1f";
-                ctx.lineWidth = 2;
-                ctx.stroke();
+                drawThanhCoFlat(x, y, TILE, S.base.alive);
               }
             }
           }
@@ -1673,32 +2123,14 @@
               ctx.lineTo(poleX, poleY - poleH);
               ctx.stroke();
 
-              // Lá cờ phấp phới
-              const now = performance.now() / 1000;
-              const wave = Math.sin(now * 6) * 3;
+              const time = performance.now() / 900; // cùng tốc độ với thành cổ
               const fw = Math.max(16, Math.floor(t.size * 0.9));
               const fh = Math.max(10, Math.floor(t.size * 0.45));
               const fx = poleX + 2;
-              const fy = poleY - poleH + fh / 2;
+              const fy = poleY - poleH; // y là mép trên của cờ
 
-              ctx.fillStyle = VN_COL.flagR;
-              ctx.beginPath();
-              ctx.moveTo(fx, fy - fh / 2);
-              ctx.lineTo(fx + fw * 0.5, fy - fh / 2 + wave);
-              ctx.lineTo(fx + fw, fy + fh / 2 - wave);
-              ctx.lineTo(fx + fw * 0.5, fy + fh / 2);
-              ctx.closePath();
-              ctx.fill();
-
-              ctx.fillStyle = VN_COL.star;
-              drawStar(
-                fx + fw * 0.45,
-                fy,
-                5,
-                Math.max(5, Math.floor(fh * 0.35)),
-                Math.max(2, Math.floor(fh * 0.17))
-              );
-              ctx.fill();
+              // Gọi hàm cờ chung với cùng tham số chuyển động
+              drawFlag(ctx, fx, fy, fw, fh, time, 3, 2);
             } else {
               // địch giữ màu cũ
               ctx.fillStyle = enemyBody;
