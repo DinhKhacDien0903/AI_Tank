@@ -1089,6 +1089,8 @@
 
       // ===== Game State =====
       const S = {
+        scorches: [],     // vết cháy đen (tàn dư) trên nền
+
         map: [], // grid of tiles
         explosions: [], // danh sách hiệu ứng nổ
         particles: [],  // hạt/tia lửa/vòng xung kích
@@ -1415,7 +1417,7 @@
       function killTank(t) {
         t.active = false;
         try {
-          spawnExplosion(t.x, t.y, false, "tankGrey");
+          explodeTankCinematic(t.x, t.y);
           playSfx("explode_tank");
         } catch (e) { }
         //   if (t.isPlayer) {
@@ -1883,6 +1885,12 @@
           }
         }
         updateParticles(dt);
+        // giảm thời gian tồn tại vết cháy
+        if (!S.scorches) S.scorches = [];
+        for (let i = S.scorches.length - 1; i >= 0; i--) {
+          S.scorches[i].life -= dt;
+          if (S.scorches[i].life <= 0) S.scorches.splice(i, 1);
+        }
         // cập nhật explosions
         S.explosions = S.explosions.filter((e) => now - e.start < e.duration);
         updateSmokes(dt);
@@ -1895,7 +1903,7 @@
         S.particles.push({
           kind: "ring",
           x, y,
-          r: 6, rGrow: 160, // px/s
+          r: 3, rGrow: 60, // px/s
           a: 0.55, aFade: 2.8, // alpha giảm /s
           color: col.aura,
           life: 0.25,
@@ -1987,6 +1995,13 @@
             p.vx += (p.ax || 0) * dt; p.vy += (p.ay || 0) * dt;
             p.x += p.vx * dt; p.y += p.vy * dt;
             p.rot += (p.vr || 0) * dt;
+          } else if (p.kind === "smoke") {
+            // khói xám đen loang ra và bay nhẹ lên
+            p.vx += (p.ax || 0) * dt;
+            p.vy += (p.ay || 0) * dt;
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.r += (p.grow || 36) * dt; // nở từ từ
           }
         }
       }
@@ -2029,8 +2044,126 @@
             ctx.fillStyle = p.color || "#6b5b3e";
             ctx.fillRect(-(p.w || 3) / 2, -(p.h || 2) / 2, p.w || 3, p.h || 2);
             ctx.restore();
+          } else if (p.kind === "smoke") {
+            // 3 lớp khói mềm, xám đen -> xám nhạt
+            const k = Math.max(0, p.life / (p.maxLife || p.life || 0.6)); // 1..0
+            const R = Math.max(2, p.r);
+            const squash = 1 + 0.25 * (1 - k);
+
+            // lõi tối
+            ctx.globalAlpha = 0.18 + 0.22 * k;
+            ctx.fillStyle = "rgba(60,60,60,0.9)";
+            ctx.beginPath();
+            ctx.ellipse(p.x, p.y, R * 0.7, R * 0.7 * squash, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // trung gian
+            ctx.globalAlpha = 0.15 + 0.18 * k;
+            ctx.fillStyle = "rgba(140,145,150,0.7)";
+            ctx.beginPath();
+            ctx.ellipse(p.x, p.y, R, R * squash, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // viền nhạt
+            ctx.globalAlpha = 0.1 + 0.12 * k;
+            ctx.fillStyle = "rgba(210,215,220,0.5)";
+            ctx.beginPath();
+            ctx.ellipse(p.x, p.y, R * 1.25, R * 1.25 * squash, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.globalAlpha = 1;
           }
+
         }
+      }
+      function explodeTankCinematic(x, y) {
+        const now = performance.now();
+
+        // === GĐ1: tia chói + quầng nổ vàng-cam + tia lửa 8 hướng ===
+        // vòng xung kích trắng
+        S.particles.push({
+          kind: "ring",
+          x, y,
+          r: 6, rGrow: 160,
+          a: 0.8, aFade: 3.2,
+          color: "rgba(255,255,255,0.95)",
+          life: 0.22
+        });
+
+        // quầng lửa đầu (vàng-cam)
+        S.particles.push({
+          kind: "fire",
+          x, y,
+          vx: 0, vy: 0,
+          r: 3, grow: 28,
+          a: 0.95, aFade: 2.2,
+          core: "#fff",
+          edge: "#ffb74d",
+          life: 0.25
+        });
+
+        // tia lửa 8 hướng
+        for (let i = 0; i < 4; i++) {
+          const ang = (i / 8) * Math.PI * 2;
+          const spd = 50 + Math.random() * 25;
+          S.particles.push({
+            kind: "spark",
+            x, y,
+            vx: Math.cos(ang) * spd,
+            vy: Math.sin(ang) * spd,
+            a: 1.0, aFade: 3.8,
+            color: "#ffd06b",
+            w: 2,
+            life: 0.25 + Math.random() * 0.12
+          });
+        }
+
+        try { playSfx("explode_tank_cinematic"); } catch (e) { }
+
+        // === GĐ2: lửa cháy lan vàng→cam→đỏ + khói xám đen + mảnh sắt ===
+        setTimeout(() => {
+          // nhiều fireball lan
+          for (let i = 0; i < 3; i++) {
+            const ang = Math.random() * Math.PI * 2;
+            const spd = 40 + Math.random() * 50;
+            S.particles.push({
+              kind: "fire",
+              x, y,
+              vx: Math.cos(ang) * spd,
+              vy: Math.sin(ang) * spd - 20,
+              r: 1.5 + Math.random() * 2,
+              grow: 18,
+              a: 0.9, aFade: 1.6,
+              // pha màu ấm dần về đỏ sẫm
+              core: "#fff",
+              edge: Math.random() < 0.5 ? "#ff8c3a" : "#ff5a36",
+              life: 0.30 + Math.random() * 0.18
+
+            });
+          }
+
+          // mảnh sắt (debris) tung toé
+          for (let i = 0; i < 3; i++) {
+            const ang = Math.random() * Math.PI * 2;
+            const spd = 40 + Math.random() * 40;
+            S.particles.push({
+              kind: "debris",
+              x, y,
+              vx: Math.cos(ang) * spd,
+              vy: Math.sin(ang) * spd - 60,
+              ax: 0, ay: 320,
+              rot: Math.random() * Math.PI,
+              vr: -2 + Math.random() * 4,
+              w: 1 + Math.random() * 1.5,
+              h: 1 + Math.random() * 1.0,
+              color: "#5c4a2f",
+              a: 0.95, aFade: 1.6,
+              life: 0.4 + Math.random() * 0.2
+            });
+          }
+
+          try { playSfx("metal_rattle"); } catch (e) { }
+        }, 120);
       }
 
       function releaseOwner(id) {
@@ -2526,6 +2659,45 @@
 
         ctx.restore();
       }
+      function addScorch(x, y) {
+        S.scorches.push({
+          x, y,
+          r0: 8 + Math.random() * 6,
+          r1: 22 + Math.random() * 10,
+          life: 6.0,       // tồn tại ~6 giây
+          maxLife: 6.0,
+          rot: Math.random() * Math.PI * 2
+        });
+      }
+
+      function drawScorches(dt) {
+        if (!S.scorches) S.scorches = [];
+        for (let i = S.scorches.length - 1; i >= 0; i--) {
+          const s = S.scorches[i];
+          s.life -= dt;
+          if (s.life <= 0) { S.scorches.splice(i, 1); continue; }
+
+          const k = Math.max(0, s.life / s.maxLife); // 1..0
+          const R = s.r0 + (s.r1 - s.r0) * (1 - k);
+
+          ctx.save();
+          ctx.translate(s.x, s.y);
+          ctx.rotate(s.rot);
+
+          // quầng cháy đen → mờ dần, lõi xanh-lục/xám rất nhẹ
+          const g = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
+          g.addColorStop(0.00, "rgba(60,80,60," + (0.25 * k) + ")");  // xanh lục xám (xác xe)
+          g.addColorStop(0.45, "rgba(30,30,30," + (0.45 * k) + ")");  // đen
+          g.addColorStop(1.00, "rgba(0,0,0,0)");
+          ctx.globalAlpha = 0.9 * k;
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.arc(0, 0, R, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.restore();
+        }
+      }
 
       function draw() {
         ctx.clearRect(0, 0, W, H);
@@ -2535,6 +2707,7 @@
         drawCurvedRiverRibbon();
         drawRiverLabel();
         drawBridges();
+        drawScorches((S.lastTime ? 0 : 0));
         for (let gy = 0; gy < GRID; gy++) {
           for (let gx = 0; gx < GRID; gx++) {
             const t = S.map[gy][gx];
