@@ -1263,8 +1263,8 @@
 
         // --- Place fewer bunkers (thoáng hơn để dễ di chuyển) ---
         // Tuyệt đối không đè lên sông/cầu vì setTileSafe đã chặn.
-        bunker3x3(3, 3);      // top-left
-        bunker3x3(11, 3);     // top-right
+        bunker3x3(3, 2);      // top-left
+        bunker3x3(11, 2);     // top-right
         for (let dx = 0; dx < 2; dx++) {
           for (let dy = 0; dy < 2; dy++) {
             setTileSafe(2 + dx, 12 + dy, "brick");   // trái
@@ -1314,7 +1314,7 @@
 
         // 5 vị trí ƯU TIÊN cho mỗi bờ (y=6: bờ TRÊN, y=8: bờ DƯỚI)
         // Lưu ý: nếu một toạ độ bị chặn bởi rule, placeBushWithFallback sẽ tự dịch 1–2 ô lân cận.
-        const TOP_BANK = [[5, 1], [8, 3], [2, 5], [10, 0], [14, 6]];   // 5 bụi bờ TRÊN
+        const TOP_BANK = [[5, 1], [8, 3], [2, 5], [11, 5], [14, 6]];   // 5 bụi bờ TRÊN
         const BOTTOM_BANK = [[3, 11], [10, 8], [5, 8], [11, 10], [13, 13]];  // 5 bụi bờ DƯỚI
 
         TOP_BANK.forEach(([bx, by]) => placeBushWithFallback(bx, by));
