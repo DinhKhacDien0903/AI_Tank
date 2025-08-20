@@ -277,12 +277,19 @@
         // Kamehameha bullet colors
         const BULLET_COL = {
           player: {
-            core: "#9be7ff", // xanh-cyan sáng
+            // giữ nguyên màu người chơi
+            core: "#9be7ff",
             aura: "rgba(80, 180, 255, 0.55)",
           },
-          enemy: {
-            core: "#ffd06b", // vàng-cam sáng
-            aura: "rgba(255, 120, 40, 0.55)",
+          enemyBasic: {
+            // địch power 1
+            core: "#ffd06b",
+            aura: "rgba(255, 170, 60, 0.55)",
+          },
+          enemyArmored: {
+            // địch power 2
+            core: "#ff6b6b",
+            aura: "rgba(255, 70, 70, 0.55)",
           },
         };
 
@@ -1671,9 +1678,20 @@
 
             // === kamehameha fields ===
             age: 0, // thời gian sống (s)
-            width: 3 + t.power * 1.0, // bề dày lõi đạn
-            core: t.isPlayer ? BULLET_COL.player.core : BULLET_COL.enemy.core,
-            aura: t.isPlayer ? BULLET_COL.player.aura : BULLET_COL.enemy.aura,
+            // kích thước: player giữ như cũ; địch power 1 nhỏ hơn rõ rệt
+            width: t.isPlayer ? 3 + t.power * 1.0 : t.power === 1 ? 2.6 : 4.2,
+            // màu: tách theo power của địch
+            core: t.isPlayer
+              ? BULLET_COL.player.core
+              : t.power === 1
+              ? BULLET_COL.enemyBasic.core
+              : BULLET_COL.enemyArmored.core,
+            aura: t.isPlayer
+              ? BULLET_COL.player.aura
+              : t.power === 1
+              ? BULLET_COL.enemyBasic.aura
+              : BULLET_COL.enemyArmored.aura,
+
             trail: 0, // chiều dài vệt
           });
           t.last = now;
@@ -3616,8 +3634,8 @@
             let trackBase, trackRung, trackAlt;
             if (t.isPlayer) {
               trackBase = VN_COL.dark; // nền băng xích
-              trackRung = "#112015"; // răng tối
-              trackAlt = "#6ea46b"; // răng sáng (dễ nhìn, khác biệt rõ)
+              trackRung = "#0f2a12";
+              trackAlt = "#8fd78a";
             } else if (t.kind === "armored") {
               // thép tối
               trackBase = "#2a2c31";
@@ -3632,10 +3650,9 @@
 
             ctx.fillStyle = trackBase;
             if (t.isPlayer) {
-              // xanh quân đội – đồng bộ thân xe VN
-              trackBase = VN_COL.dark; // băng xích
-              trackRung = "#223322"; // răng tối
-              trackAlt = "#354a35"; // răng sáng (xen kẽ)
+              trackBase = VN_COL.dark;
+              trackRung = "#0f2a12"; // tối hơn
+              trackAlt = "#8fd78a"; // sáng hơn – tương phản rõ
             } else if (t.kind === "armored") {
               // giáp dày: tông thép tối
               trackBase = "#2a2c31";
