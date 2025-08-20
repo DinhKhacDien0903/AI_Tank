@@ -1547,15 +1547,17 @@
         }
 
         function newEnemy(kind) {
+          const armored = kind === "armored";
           const sp = choice(S.spawn.points);
+          const testSize = armored ? TILE - 1 : TILE - 6;
           let gx = sp.gx,
             gy = sp.gy,
             tries = 5;
           let pos = toPx(gx, gy);
           while (tries--) {
             if (
-              !blockedForTank(pos.x, pos.y, TILE - 6) &&
-              !overlapAnyTank(pos.x, pos.y, TILE - 6)
+              !blockedForTank(pos.x, pos.y, testSize) &&
+              !overlapAnyTank(pos.x, pos.y, testSize)
             )
               break;
             const alt = choice(S.spawn.points);
@@ -1563,15 +1565,15 @@
             gy = alt.gy;
             pos = toPx(gx, gy);
           }
-          if (blockedForTank(pos.x, pos.y, TILE - 6)) return null;
-          const armored = kind === "armored";
+          if (blockedForTank(pos.x, pos.y, testSize)) return null;
+
           return {
             id: "E-" + kind + "-" + Math.random().toString(36).slice(2),
             x: pos.x,
             y: pos.y,
             dir: "down",
             speed: 80,
-            size: TILE - 6,
+            size: testSize,
             hp: armored ? 3 : 1,
             power: armored ? 2 : 1,
             cd: armored ? 600 : 800,
@@ -1752,11 +1754,11 @@
             return a.sort((a, b) => a - b);
           };
           //TODO: star appear
-          S.itemPlan.stars = plan(3, 10, PLAY_SECONDS - 10);
-          S.itemPlan.shovels = plan(2, 15, PLAY_SECONDS - 15);
+          // S.itemPlan.stars = plan(3, 10, PLAY_SECONDS - 10);
+          // S.itemPlan.shovels = plan(2, 15, PLAY_SECONDS - 15);
 
-          // S.itemPlan.stars = plan(5, 1, PLAY_SECONDS - 5); // 5 sao từ 1s -> 175s (nhiều hơn, sớm hơn)
-          // S.itemPlan.shovels = plan(3, 8, PLAY_SECONDS - 10);
+          S.itemPlan.stars = plan(5, 1, PLAY_SECONDS - 5); // 5 sao từ 1s -> 175s (nhiều hơn, sớm hơn)
+          S.itemPlan.shovels = plan(3, 8, PLAY_SECONDS - 10);
         }
         function spawnItem(kind) {
           let tries = 50;
@@ -1823,6 +1825,7 @@
           S.status = "playing";
           S.running = true;
           planItems();
+          spawnItem("star");
           syncUI();
           overlay.style.display = "none";
           btnRestart.style.display = "none";
@@ -3580,8 +3583,31 @@
             // ---------- XÍCH (màu hài hòa) ----------
             const trackW = Math.max(6, Math.floor(t.size * 0.28));
             const rungStep = 6;
-            const rungOffset = Math.floor((t.trackPhase || 0) * rungStep);
+            // Cho cảm giác cuộn đúng hướng theo dir
+            const basePhase = (t.trackPhase || 0) % 1;
+            const dirSign = t.dir === "up" || t.dir === "left" ? -1 : 1;
+            const rungOffset =
+              ((dirSign > 0 ? basePhase : 1 - basePhase) * rungStep) | 0;
+
+            // Bảng màu theo loại tank + màu xen kẽ rõ ràng cho player
             let trackBase, trackRung, trackAlt;
+            if (t.isPlayer) {
+              trackBase = VN_COL.dark; // nền băng xích
+              trackRung = "#112015"; // răng tối
+              trackAlt = "#6ea46b"; // răng sáng (dễ nhìn, khác biệt rõ)
+            } else if (t.kind === "armored") {
+              // thép tối
+              trackBase = "#2a2c31";
+              trackRung = "#4b4f57";
+              trackAlt = "#3a3e45";
+            } else {
+              // basic: nâu đất hợp thân vàng-cam
+              trackBase = "#5a4a2a";
+              trackRung = "#40351f";
+              trackAlt = "#6c5a36";
+            }
+
+            ctx.fillStyle = trackBase;
             if (t.isPlayer) {
               // xanh quân đội – đồng bộ thân xe VN
               trackBase = VN_COL.dark; // băng xích
@@ -3606,31 +3632,45 @@
               ctx.fillRect(x, y, trackW, t.size);
               ctx.fillRect(x + t.size - trackW, y, trackW, t.size);
 
-              // răng xích cuộn (màu xen kẽ)
+              // răng xích cuộn (xen kẽ + clip để không ló ra ngoài)
+              ctx.save();
+              ctx.beginPath();
+              ctx.rect(x, y, trackW, t.size); // xích trái
+              ctx.rect(x + t.size - trackW, y, trackW, t.size); // xích phải
+              ctx.clip();
+
               for (
                 let i = 0, yy = y - rungOffset;
                 yy < y + t.size + rungStep;
                 yy += rungStep, i++
               ) {
                 ctx.fillStyle = i & 1 ? trackRung : trackAlt;
-                ctx.fillRect(x + 1, yy, trackW - 2, 2); // trái
-                ctx.fillRect(x + t.size - trackW + 1, yy, trackW - 2, 2); // phải
+                ctx.fillRect(x + 1, yy, trackW - 2, 3); // trái (răng dày hơn)
+                ctx.fillRect(x + t.size - trackW + 1, yy, trackW - 2, 3); // phải
               }
+              ctx.restore();
             } else {
               // ngang: xích trên/dưới
               ctx.fillRect(x, y, t.size, trackW);
               ctx.fillRect(x, y + t.size - trackW, t.size, trackW);
 
-              // răng xích cuộn (màu xen kẽ)
+              // răng xích cuộn (xen kẽ + clip để không ló ra ngoài)
+              ctx.save();
+              ctx.beginPath();
+              ctx.rect(x, y, t.size, trackW); // xích trên
+              ctx.rect(x, y + t.size - trackW, t.size, trackW); // xích dưới
+              ctx.clip();
+
               for (
                 let i = 0, xx = x - rungOffset;
                 xx < x + t.size + rungStep;
                 xx += rungStep, i++
               ) {
                 ctx.fillStyle = i & 1 ? trackRung : trackAlt;
-                ctx.fillRect(xx, y + 1, 2, trackW - 2); // trên
-                ctx.fillRect(xx, y + t.size - trackW + 1, 2, trackW - 2); // dưới
+                ctx.fillRect(xx, y + 1, 3, trackW - 2); // trên (răng dày hơn)
+                ctx.fillRect(xx, y + t.size - trackW + 1, 3, trackW - 2); // dưới
               }
+              ctx.restore();
             }
 
             // ---------- THÂN ----------
