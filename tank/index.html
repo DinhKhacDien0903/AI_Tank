@@ -265,7 +265,7 @@
         const PLANE_CFG = {
           startAfter: 5, // xuất hiện sau 50s
           speed: 200, // nhanh gấp ~2 lần tank người chơi (100)
-          dropCount: 5, // mỗi lần bay thả 5 quả bom
+          dropCount: 6, // mỗi lần bay thả 5 quả bom
           size: 22, // kích thước vẽ máy bay (px)
           bombFall: 260, // tốc độ rơi của bom (px/s)
           killRadius: 14, // rơi trúng (đè lên) -> chết luôn
@@ -1548,14 +1548,40 @@
         // ===== Airplane & Bombs =====
         function spawnPlane() {
           const margin = 40;
-          // bay chéo từ dưới-trái lên trên-phải, đi xuyên bản đồ
-          const start = { x: -margin, y: H + margin };
-          const end = { x: W + margin, y: -margin };
+
+          // ĐƯỜNG CHÉO CHUẨN của map: (0, H)  →  (W, 0)
+          const baseDx = W; // W - 0
+          const baseDy = -H; // 0 - H
+          const baseLen = Math.hypot(baseDx, baseDy) || 1;
+          const dirx = baseDx / baseLen;
+          const diry = baseDy / baseLen;
+
+          // KÉO DÀI đoạn thẳng theo đúng hướng chéo để ra ngoài màn hình
+          const start = { x: 0 - dirx * margin, y: H - diry * margin }; // bottom-left lùi ra ngoài
+          const end = { x: W + dirx * margin, y: 0 + diry * margin }; // top-right tiến ra ngoài
+
+          // Lưu vector/hành trình
           const dx = end.x - start.x,
             dy = end.y - start.y;
           const len = Math.hypot(dx, dy) || 1;
-          const dirx = dx / len,
-            diry = dy / len;
+
+          S.planes.push({
+            x: start.x,
+            y: start.y,
+            sx: start.x,
+            sy: start.y,
+            ex: end.x,
+            ey: end.y,
+            dirx,
+            diry,
+            speed: PLANE_CFG.speed,
+            traveled: 0,
+            length: len,
+            dropAtT: [0.05, 0.25, 0.45, 0.65, 0.85],
+            dropIndex: 0,
+            alive: true,
+          });
+          S.planeSpawned = true;
 
           // các mốc thả bom (5 lần) theo tỉ lệ đường bay
           const dropAtT = [0.05, 0.25, 0.45, 0.65, 0.85];
@@ -1725,13 +1751,13 @@
           ctx.translate(p.x, p.y);
 
           // bóng đổ nhẹ dưới máy bay (giúp nhìn nổi trên nền)
-          ctx.save();
-          ctx.globalAlpha = 0.2;
-          ctx.fillStyle = "#000";
-          ctx.beginPath();
-          ctx.ellipse(+8, +10, w * 0.22, h * 0.12, 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
+          // ctx.save();
+          // ctx.globalAlpha = 0.2;
+          // ctx.fillStyle = "#000";
+          // ctx.beginPath();
+          // ctx.ellipse(+8, +10, w * 0.22, h * 0.12, 0, 0, Math.PI * 2);
+          // ctx.fill();
+          // ctx.restore();
 
           const base = Math.atan2(p.diry, p.dirx);
           ctx.rotate(base + (PLANE_CFG.spriteFix || 0));
@@ -1748,10 +1774,10 @@
         }
 
         function drawBomb(b) {
-          // bóng bom đổ xuống mặt đất (ellipse) để dễ nhìn
-          ctx.save();
-          const t = clamp((b.y - 0) / (b.targetY - 0), 0, 1); // 0..1
+          // bóng trên mặt đất (giữ như cũ)
+          const t = clamp((b.y - 0) / (b.targetY - 0), 0, 1);
           const shadowR = 8 + 10 * t;
+          ctx.save();
           ctx.globalAlpha = 0.25;
           ctx.fillStyle = "#000";
           ctx.beginPath();
@@ -1759,25 +1785,33 @@
             b.x + 6,
             b.targetY + 4,
             shadowR,
-            shadowR * 0.4,
+            shadowR * 0.42,
             0,
             0,
             Math.PI * 2
           );
           ctx.fill();
-          ctx.globalAlpha = 1;
+          ctx.restore();
 
-          // thân bom (tròn nhỏ rơi thẳng xuống)
-          const r = 5;
-          ctx.fillStyle = "#5b5f66";
-          ctx.beginPath();
-          ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
-          ctx.fill();
-          // highlight
-          ctx.fillStyle = "rgba(255,255,255,0.7)";
-          ctx.beginPath();
-          ctx.arc(b.x - 2, b.y - 2, r * 0.45, 0, Math.PI * 2);
-          ctx.fill();
+          // vẽ bom bằng ảnh
+          if (!S._bombImg) {
+            S._bombImg = new Image();
+            S._bombImg.src = "bomb.png"; // đặt cạnh index.html
+          }
+          const img = S._bombImg;
+          if (!img.complete || !img.naturalWidth) return;
+
+          // căn giữa ảnh tại (b.x, b.y), mũi hướng xuống
+          const targetH = Math.max(22, TILE * 0.9); // chỉnh kích thước ở đây nếu muốn
+          const ratio = img.naturalWidth / img.naturalHeight;
+          const w = targetH * ratio;
+          const h = targetH;
+
+          ctx.save();
+          ctx.translate(b.x, b.y);
+          // Ảnh bomb đã đúng chiều mũi xuống; không cần xoay. Nếu file của bạn mũi lên, dùng: ctx.rotate(Math.PI);
+          ctx.imageSmoothingEnabled = true;
+          ctx.drawImage(img, -w / 2, -h / 2, w, h);
           ctx.restore();
         }
 
