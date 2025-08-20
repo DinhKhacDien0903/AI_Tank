@@ -1532,7 +1532,8 @@
 
         // ===== Tanks & Bullets =====
         function newPlayer() {
-          const p = toPx(7, 10); // mới: ngay trên căn cứ nhưng ngoài tường
+          const p = toPx(7, 10); // ngay trên căn cứ nhưng ngoài tường
+          const now = performance.now();
           return {
             id: "P-" + Math.random().toString(36).slice(2),
             x: p.x,
@@ -1550,6 +1551,10 @@
             trackPhase: 0, // pha xích (0..1)
             trackOn: false, // có đang chạy không
             _smokeTimer: 0,
+
+            // NEW: vô địch ngắn + nhấp nháy khi vừa xuất hiện ở Thành Cổ
+            spawnInvulnUntil: now + 900, // ms (1.8s)
+            spawnBlinkPeriod: 180, // ms, chu kỳ nhấp nháy
           };
         }
 
@@ -2226,21 +2231,6 @@
                 continue;
               }
             }
-            // for (const t of S.tanks) {
-            //   if (!t.active) continue;
-            //   if (t.id === b.owner) continue;
-            //   if (rectOverlap(b.x, b.y, 6, 6, t.x, t.y, t.size, t.size)) {
-            //     t.hp -= b.power;
-            //     b.active = false;
-            //     releaseOwner(b.owner);
-            //     if (t.hp <= 0) killTank(t);
-            //     else if (t.isPlayer) {
-            //       S.playerHP = t.hp;
-            //       syncUI();
-            //     }
-            //     break;
-            //   }
-            // }
 
             //TODO: set god mode
             for (const t of S.tanks) {
@@ -2249,8 +2239,18 @@
               if (!rectOverlap(b.x, b.y, 6, 6, t.x, t.y, t.size, t.size))
                 continue;
 
+              // BỎ QUA nếu player đang vô địch khi mới spawn
+              if (
+                t.isPlayer &&
+                t.spawnInvulnUntil &&
+                performance.now() < t.spawnInvulnUntil
+              ) {
+                continue;
+              }
+
               // Ai là chủ viên đạn?
               const owner = S.tanks.find((z) => z.id === b.owner);
+
               const ownerIsPlayer = !!(owner && owner.isPlayer);
 
               // TẮT FRIENDLY FIRE:
@@ -3689,6 +3689,18 @@
 
             const x = t.x - t.size / 2;
             const y = t.y - t.size / 2;
+
+            // NEW: nhấp nháy khi player vừa spawn tại Thành Cổ
+            if (
+              t.isPlayer &&
+              t.spawnInvulnUntil &&
+              performance.now() < t.spawnInvulnUntil
+            ) {
+              const period = t.spawnBlinkPeriod || 120; // ms
+              if (Math.floor(performance.now() / period) % 2 === 0) {
+                continue; // bỏ vẽ frame này để tạo hiệu ứng chớp tắt
+              }
+            }
 
             // màu thân cho địch (player sẽ override bằng VN_COL)
             const enemyBody = t.kind === "armored" ? "#ff6b6b" : "#f0ad4e";
