@@ -2295,59 +2295,57 @@
       }
       function drawKameBullet(b) {
         const v = dirToVec(b.dir);
+        const coreR = Math.max(2.8, (b.width || 4) * 0.9);
+        const core = b.core || "#ffffff";
+        const aura = b.aura || "rgba(255,255,255,0.5)";
         const tNow = performance.now() / 1000;
-
-        // Kích thước lõi đạn
-        const coreR = (b.width || 4) * 0.9;
 
         ctx.save();
 
-        // === 1) NỔ NHỎ KHI VỪA RA NÒNG (0 -> 0.12s) ===
-        if ((b.age || 0) < 0.12) {
-          const k = (0.12 - b.age) / 0.12; // 1 -> 0
-          const cx = b.x - v.x * 8;        // lùi về miệng nòng một chút
-          const cy = b.y - v.y * 8;
-          const R = coreR * (1 + 6 * (1 - k)); // nở nhanh rồi tắt
+        // === 1) NỔ NHỎ Ở MIỆNG NÒNG (0 -> ~0.15s) ===
+        if ((b.age || 0) < 0.15) {
+          const k = 1 - (b.age / 0.15);              // 1 -> 0
+          const cx = b.x - v.x * 10;
+          const cy = b.y - v.y * 10;
+          const R = coreR * (2.2 + 5.0 * k);        // nở to lúc đầu rồi tắt
 
           // quầng nổ mềm
           const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
-          g.addColorStop(0.0, "rgba(255,255,255,0.95)");
-          g.addColorStop(0.4, b.core || "#ffffff");
-          g.addColorStop(1.0, "rgba(255,255,255,0.0)");
+          g.addColorStop(0.00, "rgba(255,255,255,0.95)");
+          g.addColorStop(0.40, core);
+          g.addColorStop(1.00, "rgba(255,255,255,0.00)");
           ctx.fillStyle = g;
           ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
 
-          // vòng shock sáng
+          // vòng shock sáng thoáng
           ctx.globalAlpha = 0.55 * k;
-          ctx.strokeStyle = b.aura || "rgba(255,255,255,0.5)";
-          ctx.lineWidth = 2 + 4 * k;
+          ctx.strokeStyle = aura;
+          ctx.lineWidth = 2 + 3 * k;
           ctx.beginPath(); ctx.arc(cx, cy, R * 0.7, 0, Math.PI * 2); ctx.stroke();
           ctx.globalAlpha = 1;
         }
 
-        // === 2) VIÊN ĐẠN NĂNG LƯỢNG (không vệt dài) ===
-        // halo (hào quang)
-        const haloR = coreR * 2.5;
+        // === 2) VIÊN ĐẠN NĂNG LƯỢNG (không có đường dài) ===
+        // halo
+        const haloR = coreR * 2.4;
         const gHalo = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, haloR);
         gHalo.addColorStop(0.00, "rgba(255,255,255,0.90)");
-        gHalo.addColorStop(0.40, b.core || "#ffffff");
+        gHalo.addColorStop(0.40, core);
         gHalo.addColorStop(1.00, "rgba(255,255,255,0.00)");
         ctx.fillStyle = gHalo;
         ctx.beginPath(); ctx.arc(b.x, b.y, haloR, 0, Math.PI * 2); ctx.fill();
 
-        // lõi sáng
+        // lõi
         ctx.fillStyle = "#fff";
         ctx.beginPath(); ctx.arc(b.x, b.y, coreR * 0.75, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = b.core || "#ffffff";
+        ctx.fillStyle = core;
         ctx.beginPath(); ctx.arc(b.x, b.y, coreR * 0.55, 0, Math.PI * 2); ctx.fill();
 
-        // đuôi ngắn (comet tail rất ngắn để thấy hướng)
-        const tailL = 10; // px
-        const gTail = ctx.createLinearGradient(
-          b.x - v.x * tailL, b.y - v.y * tailL, b.x, b.y
-        );
+        // đuôi rất ngắn để thấy hướng bay
+        const tailL = 8;
+        const gTail = ctx.createLinearGradient(b.x - v.x * tailL, b.y - v.y * tailL, b.x, b.y);
         gTail.addColorStop(0, "rgba(255,255,255,0.0)");
-        gTail.addColorStop(1, b.core || "#ffffff");
+        gTail.addColorStop(1, core);
         ctx.strokeStyle = gTail;
         ctx.lineWidth = coreR * 0.7;
         ctx.lineCap = "round";
@@ -2356,15 +2354,15 @@
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
 
-        // === 3) GỢN SÓNG LAN TỎA QUANH VIÊN ĐẠN (sống theo thời gian) ===
-        const pulse = 0.9;           // 1 gợn / 0.9s
-        const waves = 2;             // 2 vòng xen kẽ
-        for (let i = 0; i < waves; i++) {
-          const ph = ((tNow + i * pulse * 0.5) % pulse) / pulse; // 0..1
-          const R = coreR * (1.4 + ph * 4.2); // lan rộng
-          const a = (1 - ph) * 0.5;           // mờ dần
+        // === 3) GỢN SÓNG LAN TỎA QUANH VIÊN ĐẠN ===
+        const period = 0.9;   // 1 gợn / 0.9s
+        const rings = 2;     // 2 vòng chạy đuổi
+        for (let i = 0; i < rings; i++) {
+          const ph = ((tNow + i * period * 0.5) % period) / period; // 0..1
+          const R = coreR * (1.6 + ph * 4.2);
+          const a = (1 - ph) * 0.5;
           ctx.globalAlpha = a;
-          ctx.strokeStyle = b.aura || "rgba(255,255,255,0.5)";
+          ctx.strokeStyle = aura;
           ctx.lineWidth = 2;
           ctx.beginPath(); ctx.arc(b.x, b.y, R, 0, Math.PI * 2); ctx.stroke();
         }
@@ -2372,7 +2370,6 @@
 
         ctx.restore();
       }
-
 
       function draw() {
         ctx.clearRect(0, 0, W, H);
