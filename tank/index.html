@@ -1885,7 +1885,9 @@
             playSfx(win ? "win" : "lose");
           } catch (e) {}
           overlay.innerHTML = `<h2>${
-            win ? "YOU WIN" : "GAME OVER"
+            win
+              ? "Thành cổ bất diệt – 81 ngày đêm anh dũng"
+              : "Sông Thạch Hãn vẫn đỏ máu anh hùng"
           }</h2><p>Score: ${
             S.score
           }</p><div class="btns"><button class="btn restart" id="ovRestart">Restart</button></div>`;
