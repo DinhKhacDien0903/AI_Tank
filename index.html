@@ -1091,7 +1091,10 @@
       const S = {
         map: [], // grid of tiles
         explosions: [], // danh sách hiệu ứng nổ
+        particles: [],  // hạt/tia lửa/vòng xung kích
         smokes: [],
+        hits: [],       // (không bắt buộc, để mở rộng sau)
+
         bushSet: new Set(),
         base: { gx: 7, gy: 13, alive: true },
         baseRings: [],
@@ -1412,6 +1415,7 @@
       function killTank(t) {
         t.active = false;
         try {
+          spawnExplosion(t.x, t.y, false, "tankGrey");
           playSfx("explode_tank");
         } catch (e) { }
         //   if (t.isPlayer) {
@@ -1862,6 +1866,10 @@
 
             // Áp dụng sát thương bình thường
             t.hp -= b.power;
+
+            // nổ nhỏ nhưng dày ở điểm va chạm
+            spawnExplosion(b.x, b.y, false, "hit");
+
             b.active = false;
             releaseOwner(b.owner);
             if (t.hp <= 0) {
@@ -1871,11 +1879,158 @@
               syncUI();
             }
             break; // đã xử lý va chạm cho viên đạn này
+
           }
         }
+        updateParticles(dt);
         // cập nhật explosions
         S.explosions = S.explosions.filter((e) => now - e.start < e.duration);
         updateSmokes(dt);
+      }
+      // ===== EFFECTS: hit burst & tank explosion =====
+      function spawnHitBurst(x, y, who = "enemy") {
+        const col = who === "player" ? BULLET_COL.player : BULLET_COL.enemy;
+
+        // 1 vòng xung kích mờ
+        S.particles.push({
+          kind: "ring",
+          x, y,
+          r: 6, rGrow: 160, // px/s
+          a: 0.55, aFade: 2.8, // alpha giảm /s
+          color: col.aura,
+          life: 0.25,
+        });
+
+        // tia lửa bay ra
+        const n = 10;
+        for (let i = 0; i < n; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const spd = 140 + Math.random() * 120;
+          S.particles.push({
+            kind: "spark",
+            x, y,
+            vx: Math.cos(ang) * spd,
+            vy: Math.sin(ang) * spd,
+            a: 0.9,
+            aFade: 3.5,
+            color: col.core,
+            w: 2,
+            life: 0.25 + Math.random() * 0.15,
+          });
+        }
+      }
+
+      function spawnTankExplosion(t, who = "enemy") {
+        // dùng hiệu ứng nổ có sẵn (vòng tròn to)
+        spawnExplosion(t.x, t.y, true);
+
+        const col = who === "player" ? BULLET_COL.player : BULLET_COL.enemy;
+
+        // nhiều "fireball" nhỏ
+        for (let i = 0; i < 6; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const spd = 60 + Math.random() * 90;
+          S.particles.push({
+            kind: "fire",
+            x: t.x, y: t.y,
+            vx: Math.cos(ang) * spd,
+            vy: Math.sin(ang) * spd,
+            r: 6 + Math.random() * 6,
+            grow: 70, // px/s
+            a: 0.85,
+            aFade: 1.8,
+            core: "#fff",
+            edge: col.core,
+            life: 0.45 + Math.random() * 0.25,
+          });
+        }
+
+        // mảnh văng (debris)
+        for (let i = 0; i < 12; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const spd = 120 + Math.random() * 160;
+          S.particles.push({
+            kind: "debris",
+            x: t.x, y: t.y,
+            vx: Math.cos(ang) * spd,
+            vy: Math.sin(ang) * spd - 80,
+            ax: 0, ay: 220,  // rơi xuống (gravity)
+            rot: Math.random() * Math.PI,
+            vr: (-2 + Math.random() * 4), // quay
+            w: 3 + Math.random() * 3,
+            h: 2 + Math.random() * 2,
+            color: "#5c4a2f",
+            a: 0.95, aFade: 1.6,
+            life: 0.6 + Math.random() * 0.4,
+          });
+        }
+      }
+
+      function updateParticles(dt) {
+        for (let i = S.particles.length - 1; i >= 0; i--) {
+          const p = S.particles[i];
+          p.life -= dt;
+          if (p.life <= 0) { S.particles.splice(i, 1); continue; }
+
+          // fade alpha
+          if (p.aFade) p.a = Math.max(0, p.a - p.aFade * dt);
+
+          if (p.kind === "ring") {
+            p.r += (p.rGrow || 120) * dt;
+          } else if (p.kind === "spark") {
+            p.x += p.vx * dt; p.y += p.vy * dt;
+            p.vx *= 0.98; p.vy *= 0.98;
+          } else if (p.kind === "fire") {
+            p.x += (p.vx || 0) * dt; p.y += (p.vy || 0) * dt;
+            p.r += (p.grow || 60) * dt;
+          } else if (p.kind === "debris") {
+            p.vx += (p.ax || 0) * dt; p.vy += (p.ay || 0) * dt;
+            p.x += p.vx * dt; p.y += p.vy * dt;
+            p.rot += (p.vr || 0) * dt;
+          }
+        }
+      }
+
+      function drawParticles() {
+        for (const p of S.particles) {
+          if (p.kind === "ring") {
+            ctx.save();
+            ctx.globalAlpha = p.a || 0.4;
+            ctx.strokeStyle = p.color || "rgba(255,255,255,0.5)";
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.stroke();
+            ctx.restore();
+          } else if (p.kind === "spark") {
+            ctx.save();
+            ctx.globalAlpha = p.a || 1;
+            ctx.strokeStyle = p.color || "#fff";
+            ctx.lineWidth = p.w || 2;
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(p.x - (p.vx || 0) * 0.03, p.y - (p.vy || 0) * 0.03); // vệt ngắn
+            ctx.stroke();
+            ctx.restore();
+          } else if (p.kind === "fire") {
+            ctx.save();
+            ctx.globalAlpha = p.a || 1;
+            const r = Math.max(1, p.r || 6);
+            const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+            g.addColorStop(0, p.core || "#fff");
+            g.addColorStop(0.5, p.edge || "#ffa94d");
+            g.addColorStop(1, "rgba(255,255,255,0)");
+            ctx.fillStyle = g;
+            ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+          } else if (p.kind === "debris") {
+            ctx.save();
+            ctx.globalAlpha = p.a || 1;
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rot || 0);
+            ctx.fillStyle = p.color || "#6b5b3e";
+            ctx.fillRect(-(p.w || 3) / 2, -(p.h || 2) / 2, p.w || 3, p.h || 2);
+            ctx.restore();
+          }
+        }
       }
 
       function releaseOwner(id) {
@@ -1897,15 +2052,16 @@
         t.y = ny;
         return true;
       }
-      function spawnExplosion(x, y, big = false) {
-        S.explosions.push({
-          x,
-          y,
-          big,
-          start: performance.now(),
-          duration: big ? 600 : 300,
-        });
+      function spawnExplosion(x, y, big = false, kind = "default") {
+        // kind: 'default' | 'hit' | 'tankGrey'
+        const now = performance.now();
+        let duration = big ? 600 : 300;
+        if (kind === "hit") duration = 220;        // nổ nhỏ nhưng dày
+        if (kind === "tankGrey") duration = 480;   // nổ bom xám
+
+        S.explosions.push({ x, y, big, kind, start: now, duration });
       }
+
 
       // ===== Render =====
       function roundRect(x, y, w, h, r) {
@@ -2635,6 +2791,16 @@
             ctx.fillRect(t.x - barrelLen, t.y - bwid / 2, barrelLen, bwid);
           if (t.dir === "right")
             ctx.fillRect(t.x, t.y - bwid / 2, barrelLen, bwid);
+          // chớp trắng khi trúng đạn (120ms)
+          if (t._flashUntil && performance.now() < t._flashUntil) {
+            const k = (t._flashUntil - performance.now()) / 120; // 0..1
+            ctx.save();
+            ctx.globalAlpha = 0.35 * Math.max(0, k);
+            ctx.fillStyle = "#ffffff";
+            roundRect(bx, by, bw, bh, 6);
+            ctx.fill();
+            ctx.restore();
+          }
 
           // ---------- HP nhỏ ở đuôi ----------
           ctx.fillStyle = "#000";
@@ -2642,19 +2808,73 @@
             ctx.fillRect(x + 4 + i * 6, y + t.size - 10, 4, 6);
         }
 
-        // explosions
+        // explosions (theo kind)
         for (const e of S.explosions) {
           const age = performance.now() - e.start;
-          const ratio = age / e.duration;
+          const t = Math.min(1, age / e.duration); // 0..1
+
+          if (e.kind === "hit") {
+            // --- nổ nhỏ nhưng dày: nhiều vòng chồng nhau + lõi sáng ---
+            const R = 6 + 18 * t;              // bán kính lan nhanh
+            const a = 1 - t;
+
+            // 1) lõi sáng nhỏ
+            const g = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, R * 0.6);
+            g.addColorStop(0, "rgba(255,255,255,0.95)");
+            g.addColorStop(0.6, "rgba(255,220,120,0.9)");
+            g.addColorStop(1, "rgba(255,255,255,0)");
+            ctx.globalAlpha = 0.9 * a;
+            ctx.fillStyle = g;
+            ctx.beginPath(); ctx.arc(e.x, e.y, R * 0.6, 0, Math.PI * 2); ctx.fill();
+
+            // 2) 2 vòng shock đậm
+            ctx.globalAlpha = 0.75 * a;
+            ctx.strokeStyle = "rgba(255,230,140,0.9)";
+            ctx.lineWidth = 2.5;
+            ctx.beginPath(); ctx.arc(e.x, e.y, R * 0.75, 0, Math.PI * 2); ctx.stroke();
+
+            ctx.globalAlpha = 0.55 * a;
+            ctx.strokeStyle = "rgba(255,255,255,0.9)";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(e.x, e.y, R, 0, Math.PI * 2); ctx.stroke();
+
+            ctx.globalAlpha = 1;
+            continue;
+          }
+
+          if (e.kind === "tankGrey") {
+            // --- nổ bom xám: khói xám lan nhỏ ---
+            const R = 10 + 22 * t;             // nhỏ hơn nổ mặc định
+            const g = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, R);
+            g.addColorStop(0.00, "rgba(235,235,235,0.95)");
+            g.addColorStop(0.35, "rgba(180,180,180,0.75)");
+            g.addColorStop(1.00, "rgba(120,120,120,0.0)");
+            ctx.globalAlpha = 1 - t * 0.9;
+            ctx.fillStyle = g;
+            ctx.beginPath(); ctx.arc(e.x, e.y, R, 0, Math.PI * 2); ctx.fill();
+
+            // viền khói đậm mờ dần
+            ctx.globalAlpha = 0.35 * (1 - t);
+            ctx.strokeStyle = "rgba(80,80,80,0.9)";
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(e.x, e.y, R * 0.85, 0, Math.PI * 2); ctx.stroke();
+
+            ctx.globalAlpha = 1;
+            continue;
+          }
+
+          // --- mặc định (cũ) ---
           const maxR = e.big ? 32 : 16;
-          const r = maxR * ratio;
-          ctx.globalAlpha = 1 - ratio;
+          const r = maxR * t;
+          ctx.globalAlpha = 1 - t;
           ctx.fillStyle = e.big ? "#ff9933" : "#ffff66";
-          ctx.beginPath();
-          ctx.arc(e.x, e.y, r, 0, Math.PI * 2);
-          ctx.fill();
+          ctx.beginPath(); ctx.arc(e.x, e.y, r, 0, Math.PI * 2); ctx.fill();
           ctx.globalAlpha = 1;
         }
+
+        // particles (vòng xung kích, tia lửa, fireball, debris)
+        drawParticles();
+
 
         // bushes on top
         for (const key of S.bushSet) {
