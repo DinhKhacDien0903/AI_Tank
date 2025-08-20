@@ -946,7 +946,7 @@
           // Sóng chạy ngang
           const basePhase = t * 1.1 + gy * 0.35 + gx * 0.15;
           for (let i = 0; i < 3; i++) {
-            const colX = x + size * (0.22 + i * 0.28);
+            const colX = x + size * (0.22 + i * 0.5);
             const amp = 2.0 + i * 0.6;
             const k = 0.085;
 
@@ -1532,7 +1532,7 @@
             y: p.y,
             dir: "up",
             speed: 100,
-            size: TILE - 6,
+            size: TILE - 1,
             hp: 3,
             power: 1,
             cd: 340,
@@ -1751,8 +1751,12 @@
             }
             return a.sort((a, b) => a - b);
           };
+          //TODO: star appear
           S.itemPlan.stars = plan(3, 10, PLAY_SECONDS - 10);
           S.itemPlan.shovels = plan(2, 15, PLAY_SECONDS - 15);
+
+          // S.itemPlan.stars = plan(5, 1, PLAY_SECONDS - 5); // 5 sao từ 1s -> 175s (nhiều hơn, sớm hơn)
+          // S.itemPlan.shovels = plan(3, 8, PLAY_SECONDS - 10);
         }
         function spawnItem(kind) {
           let tries = 50;
@@ -1763,10 +1767,19 @@
             const key = `${gx},${gy}`;
             if (t.type === "empty" && key !== `${S.base.gx},${S.base.gy}`) {
               const p = toPx(gx, gy);
+              const startY = kind === "star" ? p.y - TILE * 3 : p.y;
               S.items.push({
                 kind,
                 x: p.x,
-                y: p.y,
+                y: startY,
+                // Thêm các thuộc tính cho hiệu ứng rơi
+                fallY: kind === "star" ? p.y - TILE * 3 : p.y, // vị trí bắt đầu rơi (cao hơn 3 tile nếu là star)
+                targetY: p.y, // vị trí đích
+                falling: kind === "star", // chỉ star mới rơi
+                fallSpeed: kind === "star" ? 0 : 0, // tốc độ rơi ban đầu
+                bounce: 0, // số lần nảy
+                bounceHeight: 0, // độ cao nảy
+                bouncePhase: 0, // pha nảy
                 expiresAt: performance.now() + 12000,
                 active: true,
               });
@@ -1941,6 +1954,50 @@
           for (const it of S.items) {
             if (it.active && it.expiresAt && now >= it.expiresAt)
               it.active = false;
+          }
+
+          // === CẬP NHẬT HIỆU ỨNG RƠI CHO ITEMS ===
+          for (const it of S.items) {
+            if (!it.active) continue;
+
+            if (it.falling && it.y < it.targetY) {
+              // Đang rơi xuống
+              it.fallSpeed += 320 * dt; // gia tốc trọng trường
+              it.y += it.fallSpeed * dt;
+
+              // Kiểm tra chạm đất
+              if (it.y >= it.targetY) {
+                it.y = it.targetY;
+                it.falling = false;
+
+                // Hiệu ứng nảy nhẹ cho star
+                if (it.kind === "star") {
+                  it.bounce = 3; // số lần nảy
+                  it.bounceHeight = 8; // độ cao nảy
+                  it.bouncePhase = 0; // pha nảy
+                }
+              }
+            } else if (it.bounce > 0) {
+              // Hiệu ứng nảy sau khi chạm đất
+              it.bouncePhase += dt * 8; // tốc độ nảy
+              const bounceOffset =
+                Math.sin(it.bouncePhase) * it.bounceHeight * (it.bounce / 3);
+              it.y = it.targetY - Math.max(0, bounceOffset);
+
+              if (it.bouncePhase >= Math.PI) {
+                it.bounce--;
+                it.bounceHeight *= 0.6; // giảm độ cao mỗi lần nảy
+                it.bouncePhase = 0;
+                if (it.bounce <= 0) {
+                  it.y = it.targetY; // về vị trí cuối
+                }
+              }
+            }
+
+            // Cập nhật vị trí y cho star rơi
+            if (it.kind === "star" && it.falling) {
+              it.y = it.fallY + it.fallSpeed * (it.fallSpeed / 320); // tính vị trí dựa trên tốc độ
+            }
           }
           // player pickup
           const pl = getPlayer();
@@ -3419,12 +3476,39 @@
             const x = it.x - TILE / 2,
               y = it.y - TILE / 2;
             if (it.kind === "star") {
+              // === HIỆU ỨNG ÁNH SÁNG CHO STAR RƠI ===
+              if (it.falling) {
+                // Vệt sáng khi rơi
+                const trailLength = Math.min(40, it.fallSpeed * 0.15);
+                if (trailLength > 5) {
+                  const gradient = ctx.createLinearGradient(
+                    it.x,
+                    it.y - trailLength,
+                    it.x,
+                    it.y
+                  );
+                  gradient.addColorStop(0, "rgba(255, 215, 0, 0)");
+                  gradient.addColorStop(1, "rgba(255, 215, 0, 0.8)");
+                  ctx.fillStyle = gradient;
+                  ctx.fillRect(it.x - 2, it.y - trailLength, 4, trailLength);
+                }
+              }
+
+              // Ánh sáng lấp lánh
+              const time = performance.now() / 500;
+              const glow = 0.7 + 0.3 * Math.sin(time);
+              ctx.save();
+              ctx.globalAlpha = glow;
+              ctx.shadowColor = "#ffd700";
+              ctx.shadowBlur = it.falling ? 20 : 10;
+
               ctx.fillStyle = "#ffd700";
               drawStar(it.x, it.y, 5, TILE / 2 - 4, 6);
               ctx.fill();
               ctx.strokeStyle = "#9e7b00";
               ctx.lineWidth = 2;
               ctx.stroke();
+              ctx.restore();
             } else {
               ctx.fillStyle = "#c0c0c0";
               roundRect(x + 4, y + 4, TILE - 8, (TILE - 8) * 0.55, 6);
@@ -3494,11 +3578,26 @@
             const enemyBody = t.kind === "armored" ? "#ff6b6b" : "#f0ad4e";
 
             // ---------- XÍCH (màu hài hòa) ----------
-            const trackW = Math.max(6, Math.floor(t.size * 0.22));
+            const trackW = Math.max(6, Math.floor(t.size * 0.28));
             const rungStep = 6;
             const rungOffset = Math.floor((t.trackPhase || 0) * rungStep);
-            const trackBase = t.isPlayer ? VN_COL.dark : "#2b2b2b";
-            const trackRung = t.isPlayer ? "#2f4030" : "#444";
+            let trackBase, trackRung, trackAlt;
+            if (t.isPlayer) {
+              // xanh quân đội – đồng bộ thân xe VN
+              trackBase = VN_COL.dark; // băng xích
+              trackRung = "#223322"; // răng tối
+              trackAlt = "#354a35"; // răng sáng (xen kẽ)
+            } else if (t.kind === "armored") {
+              // giáp dày: tông thép tối
+              trackBase = "#2a2c31";
+              trackRung = "#4b4f57";
+              trackAlt = "#3a3e45";
+            } else {
+              // basic: tông nâu đất hợp thân vàng-cam
+              trackBase = "#5a4a2a";
+              trackRung = "#40351f";
+              trackAlt = "#6c5a36";
+            }
 
             ctx.fillStyle = trackBase;
 
@@ -3507,13 +3606,13 @@
               ctx.fillRect(x, y, trackW, t.size);
               ctx.fillRect(x + t.size - trackW, y, trackW, t.size);
 
-              // răng xích cuộn
-              ctx.fillStyle = trackRung;
+              // răng xích cuộn (màu xen kẽ)
               for (
-                let yy = y - rungOffset;
+                let i = 0, yy = y - rungOffset;
                 yy < y + t.size + rungStep;
-                yy += rungStep
+                yy += rungStep, i++
               ) {
+                ctx.fillStyle = i & 1 ? trackRung : trackAlt;
                 ctx.fillRect(x + 1, yy, trackW - 2, 2); // trái
                 ctx.fillRect(x + t.size - trackW + 1, yy, trackW - 2, 2); // phải
               }
@@ -3522,12 +3621,13 @@
               ctx.fillRect(x, y, t.size, trackW);
               ctx.fillRect(x, y + t.size - trackW, t.size, trackW);
 
-              ctx.fillStyle = trackRung;
+              // răng xích cuộn (màu xen kẽ)
               for (
-                let xx = x - rungOffset;
+                let i = 0, xx = x - rungOffset;
                 xx < x + t.size + rungStep;
-                xx += rungStep
+                xx += rungStep, i++
               ) {
+                ctx.fillStyle = i & 1 ? trackRung : trackAlt;
                 ctx.fillRect(xx, y + 1, 2, trackW - 2); // trên
                 ctx.fillRect(xx, y + t.size - trackW + 1, 2, trackW - 2); // dưới
               }
