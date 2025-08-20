@@ -9,4 +9,4 @@ note 20/8: Điều chỉnh cho cầu dễ sang hơn, đẹp hơn
 - Thay star và icon hóa đá. Không cho rơi xuống sông hoặc thành cổ
 - Điều chỉnh lại vị trí cây, đá, tường đất
 - Chỉnh lại xe tăng
-- Điều chỉnh đạn: 50%
+- Điều chỉnh đạn: Done

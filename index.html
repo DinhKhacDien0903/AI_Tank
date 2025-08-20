@@ -2698,6 +2698,105 @@
           ctx.restore();
         }
       }
+      // === Brick Wall (classic red, white mortar, stagger 1/2) ===
+      // Vẽ theo WORLD COORD (không "đứt" ở biên tile)
+      // === Brick Wall (warm red, beige mortar, cinematic shading) ===
+      function drawClassicBrickWallTile(gx, gy, x, y, size) {
+        const rx = x, ry = y, rw = size, rh = size;
+
+        // TUNE: tỉ lệ gạch & mạch vữa
+        const BRICK_H = Math.floor(size * 0.42);
+        const BRICK_W = Math.floor(size * 1.05);
+        const MORTAR = Math.max(1, Math.round(size * 0.03)); // mỏng, không lóa
+
+        // Màu **ấm** để hài hòa nền cát
+        const COL = {
+          mortar: "#e6d6bf",           // vữa be ấm (thay vì trắng gắt)
+          brickA: "#cf6841",           // đỏ cam ấm hơn
+          brickB: "#b35433",           // đỏ nâu trầm
+          aoTop: "rgba(0,0,0,0.08)",   // ambient occlusion mép
+          aoBot: "rgba(0,0,0,0.12)",
+          aoSide: "rgba(0,0,0,0.06)",
+          hi: "rgba(255,255,255,0.05)", // highlight rất nhẹ
+          veinL: "rgba(255,255,255,0.06)", // vân sáng
+          veinD: "rgba(0,0,0,0.06)"        // vân tối
+        };
+
+        // Nền vữa (để các đường mạch nối liền giữa tile)
+        ctx.fillStyle = COL.mortar;
+        ctx.fillRect(rx, ry, rw, rh);
+
+        // Hàng/cột theo WORLD-SPACE để không "đứt" ở biên tile
+        const firstRowY = ry - ((ry % (BRICK_H + MORTAR)));
+        for (let by = firstRowY; by < ry + rh; by += BRICK_H + MORTAR) {
+          const rowIndex = Math.floor(by / (BRICK_H + MORTAR));
+          const half = Math.floor((BRICK_W + MORTAR) / 2);
+          const rowOffset = (rowIndex & 1) ? half : 0;
+          const firstColX = rx - ((rx - rowOffset) % (BRICK_W + MORTAR));
+
+          for (let bx = firstColX; bx < rx + rw; bx += BRICK_W + MORTAR) {
+            const gx0 = Math.max(bx, rx);
+            const gy0 = Math.max(by, ry);
+            const gx1 = Math.min(bx + BRICK_W, rx + rw);
+            const gy1 = Math.min(by + BRICK_H, ry + rh);
+            const w = gx1 - gx0, h = gy1 - gy0;
+            if (w <= 0 || h <= 0) continue;
+
+            // Hai tông gạch xen kẽ + gradient dọc nhẹ
+            const base = (((Math.floor(bx / (BRICK_W + MORTAR)) + rowIndex) & 1) === 0) ? COL.brickA : COL.brickB;
+            const grad = ctx.createLinearGradient(gx0, gy0, gx0, gy0 + h);
+            grad.addColorStop(0.00, base);
+            grad.addColorStop(0.60, base);
+            grad.addColorStop(1.00, shade(base, -12));
+            ctx.fillStyle = grad;
+            ctx.fillRect(gx0, gy0, w, h);
+
+            // AO (inner-shadow) sát mép để “ăn” vào vữa → nhìn dính và có chiều sâu
+            ctx.fillStyle = COL.aoTop; ctx.fillRect(gx0, gy0, w, 1);
+            ctx.fillStyle = COL.aoBot; ctx.fillRect(gx0, gy0 + h - 1, w, 1);
+            ctx.fillStyle = COL.aoSide; ctx.fillRect(gx0, gy0, 1, h);
+            ctx.fillStyle = COL.aoSide; ctx.fillRect(gx0 + w - 1, gy0, 1, h);
+
+            // Highlight viền trên rất mỏng (giả bevel) — tinh tế, tránh “kim loại”
+            ctx.fillStyle = COL.hi;
+            ctx.fillRect(gx0, gy0 + 1, w, 1);
+
+            // Vân gạch nhẹ (2 đường uốn nhỏ trong thân)
+            ctx.lineWidth = 1;
+            // vân sáng
+            ctx.strokeStyle = COL.veinL;
+            ctx.beginPath();
+            ctx.moveTo(gx0 + 2, gy0 + Math.round(h * 0.35));
+            ctx.lineTo(gx0 + w - 2, gy0 + Math.round(h * (0.35 + 0.02 * ((rowIndex & 1) ? -1 : 1))));
+            ctx.stroke();
+            // vân tối
+            ctx.strokeStyle = COL.veinD;
+            ctx.beginPath();
+            ctx.moveTo(gx0 + 2, gy0 + Math.round(h * 0.68));
+            ctx.lineTo(gx0 + w - 2, gy0 + Math.round(h * (0.68 + 0.02 * ((rowIndex & 1) ? 1 : -1))));
+            ctx.stroke();
+          }
+        }
+      }
+
+      // (giữ helper shade() bạn đã có)
+
+
+      // Utility: chỉnh sáng/tối 1 màu hex (delta: âm=sẫm, dương=sáng)
+      function shade(hex, delta) {
+        // #rrggbb
+        const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        if (!m) return hex;
+        const clamp = v => Math.max(0, Math.min(255, v));
+        const r = clamp(parseInt(m[1], 16) + delta);
+        const g = clamp(parseInt(m[2], 16) + delta);
+        const b = clamp(parseInt(m[3], 16) + delta);
+        return "#" + r.toString(16).padStart(2, "0")
+          + g.toString(16).padStart(2, "0")
+          + b.toString(16).padStart(2, "0");
+      }
+
+
 
       function draw() {
         ctx.clearRect(0, 0, W, H);
@@ -2721,16 +2820,7 @@
                 ctx.globalAlpha = 1;
               }
             } else if (t.type === "brick") {
-              ctx.fillStyle = "#b55239";
-              ctx.fillRect(x + 2, y + 2, TILE - 4, TILE - 4);
-              ctx.strokeStyle = "#8a3f2b";
-              ctx.lineWidth = 1;
-              ctx.beginPath();
-              ctx.moveTo(x + 2, y + TILE / 2);
-              ctx.lineTo(x + TILE - 2, y + TILE / 2);
-              ctx.moveTo(x + TILE / 2, y + 2);
-              ctx.lineTo(x + TILE / 2, y + TILE - 2);
-              ctx.stroke();
+              drawClassicBrickWallTile(gx, gy, x, y, TILE);
             } else if (t.type === "steel") {
               ctx.fillStyle = "#9aa3ad";
               roundRect(x + 2, y + 2, TILE - 4, TILE - 4, 4);
