@@ -261,6 +261,18 @@
           W = TILE * GRID,
           H = TILE * GRID;
         const PLAY_SECONDS = 180; // 3 minutes
+        // === Airplane & Bomb config ===
+        const PLANE_CFG = {
+          startAfter: 5, // xuất hiện sau 50s
+          speed: 200, // nhanh gấp ~2 lần tank người chơi (100)
+          dropCount: 5, // mỗi lần bay thả 5 quả bom
+          size: 22, // kích thước vẽ máy bay (px)
+          bombFall: 260, // tốc độ rơi của bom (px/s)
+          killRadius: 14, // rơi trúng (đè lên) -> chết luôn
+          splashAdjDamage: 1, // nổ cạnh 1 ô -> -1 HP
+          spriteFix: Math.PI, // sprite của bạn mũi đang hướng NGƯỢC với vector bay => bù 180°
+          flipVertical: true, // NEW: lật dọc để không bị "úp bụng"
+        };
         const MAX_ACTIVE_ENEMIES = 4,
           TOTAL_BASIC = 10,
           TOTAL_ARMORED = 10;
@@ -1225,6 +1237,9 @@
           baseRings: [],
           tanks: [], // player + enemies
           bullets: [],
+          planes: [], // máy bay đang bay
+          bombs: [], // bom đang rơi
+          planeSpawned: false, // đã spawn máy bay hay chưa (chỉ 1 chiếc/lượt chơi)
           bridges: [],
           riverLabelPos: 0.32,
           wind: {
@@ -1528,6 +1543,242 @@
           uiBaseState.textContent =
             "Base: " + (mode === "steel" ? "STEEL" : "BRICK");
           uiBaseState.className = "pill" + (mode === "steel" ? " steel" : "");
+        }
+
+        // ===== Airplane & Bombs =====
+        function spawnPlane() {
+          const margin = 40;
+          // bay chéo từ dưới-trái lên trên-phải, đi xuyên bản đồ
+          const start = { x: -margin, y: H + margin };
+          const end = { x: W + margin, y: -margin };
+          const dx = end.x - start.x,
+            dy = end.y - start.y;
+          const len = Math.hypot(dx, dy) || 1;
+          const dirx = dx / len,
+            diry = dy / len;
+
+          // các mốc thả bom (5 lần) theo tỉ lệ đường bay
+          const dropAtT = [0.05, 0.25, 0.45, 0.65, 0.85];
+
+          S.planes.push({
+            x: start.x,
+            y: start.y,
+            sx: start.x,
+            sy: start.y,
+            ex: end.x,
+            ey: end.y,
+            dirx,
+            diry,
+            speed: PLANE_CFG.speed,
+            traveled: 0,
+            length: len,
+            dropAtT,
+            dropIndex: 0,
+            alive: true,
+          });
+          S.planeSpawned = true;
+        }
+
+        // Tính ô va chạm dọc phương "rơi xuống" từ vị trí (x, y0)
+        function findBombImpact(x, y0) {
+          const g0 = toGrid(x, y0);
+          let hitTile = null;
+          let gyHit = null;
+
+          // đi xuống theo cột, tìm brick/steel/base đầu tiên
+          for (let gy = g0.gy; gy < GRID; gy++) {
+            const gx = clamp(Math.floor(x / TILE), 0, GRID - 1);
+            const t = S.map[gy][gx];
+            if (!t) continue;
+            if (t.type === "brick" || t.type === "steel" || t.type === "base") {
+              hitTile = { gx, gy };
+              gyHit = gy;
+              break;
+            }
+          }
+          // nếu không có tường, cho rơi tới mặt đất (hàng cuối)
+          if (gyHit == null) gyHit = GRID - 1;
+
+          const targetY = gyHit * TILE + TILE / 2;
+          return { hitTile, targetY };
+        }
+
+        function dropBomb(x, y) {
+          const info = findBombImpact(x, y);
+          S.bombs.push({
+            x,
+            y,
+            vy: PLANE_CFG.bombFall,
+            targetY: info.targetY,
+            hitTile: info.hitTile, // có thể null
+            active: true,
+          });
+        }
+
+        function updatePlanes(dt) {
+          for (let i = S.planes.length - 1; i >= 0; i--) {
+            const p = S.planes[i];
+            if (!p.alive) {
+              S.planes.splice(i, 1);
+              continue;
+            }
+
+            // di chuyển
+            const step = p.speed * dt;
+            p.traveled += step;
+            p.x += p.dirx * step;
+            p.y += p.diry * step;
+
+            // thả bom ở các mốc t
+            const tNow = p.traveled / p.length;
+            while (
+              p.dropIndex < p.dropAtT.length &&
+              tNow >= p.dropAtT[p.dropIndex]
+            ) {
+              dropBomb(p.x, p.y);
+              p.dropIndex++;
+            }
+
+            // ra khỏi bản đồ -> xóa
+            if (p.traveled >= p.length + 60) {
+              p.alive = false;
+              S.planes.splice(i, 1);
+            }
+          }
+        }
+
+        function explodeBomb(b) {
+          // nổ (hiệu ứng xám)
+          spawnExplosion(b.x, b.targetY, false, "tankGrey");
+          addScorch(b.x, b.targetY);
+
+          // phá tường nếu rơi trúng brick/steel/base (kể cả thép)
+          if (b.hitTile) {
+            damageTile(b.hitTile.gx, b.hitTile.gy, 99); // power lớn để phá thép
+          }
+
+          // xét sát thương người chơi
+          const pl = getPlayer();
+          if (pl && pl.active) {
+            const dist = Math.hypot(pl.x - b.x, pl.y - b.targetY);
+            // rơi trúng -> chết luôn
+            if (dist <= PLANE_CFG.killRadius) {
+              killTank(pl);
+            } else {
+              // nổ cạnh 1 ô (Chebyshev <= 1) -> -1 máu
+              const pg = toGrid(pl.x, pl.y);
+              const eg = toGrid(b.x, b.targetY);
+              const cheb = Math.max(
+                Math.abs(pg.gx - eg.gx),
+                Math.abs(pg.gy - eg.gy)
+              );
+              if (cheb === 1) {
+                pl.hp = Math.max(0, pl.hp - PLANE_CFG.splashAdjDamage);
+                if (pl.hp <= 0) killTank(pl);
+                else {
+                  S.playerHP = pl.hp;
+                  syncUI();
+                }
+              }
+            }
+          }
+        }
+
+        function updateBombs(dt) {
+          for (let i = S.bombs.length - 1; i >= 0; i--) {
+            const b = S.bombs[i];
+            if (!b.active) {
+              S.bombs.splice(i, 1);
+              continue;
+            }
+
+            b.y += b.vy * dt;
+            if (b.y >= b.targetY) {
+              b.active = false;
+              explodeBomb(b);
+              S.bombs.splice(i, 1);
+            }
+          }
+        }
+
+        function drawPlane(p) {
+          // lazy-load ảnh 1 lần
+          if (!S._planeImg) {
+            S._planeImg = new Image();
+            S._planeImg.src = "plane.png"; // file đặt cạnh index.html
+          }
+          const img = S._planeImg;
+          if (!img.complete || !img.naturalWidth) return;
+
+          // Scale theo chiều cao mong muốn
+          const targetH = PLANE_CFG.size * 2.4; // có thể chỉnh 2.0–3.0
+          const ratio = img.naturalWidth / img.naturalHeight;
+          const w = targetH * ratio,
+            h = targetH;
+
+          // ------ FIX: anchor (tâm xoay) theo thân máy bay ------
+          // Ảnh có nhiều transparent padding; trọng tâm thân ~35% ngang, ~52% dọc.
+          const ax = w * 0.37; // từ trái qua
+          const ay = h * 0.55; // từ trên xuống
+
+          ctx.save();
+          ctx.translate(p.x, p.y);
+
+          // bóng đổ nhẹ dưới máy bay (giúp nhìn nổi trên nền)
+          ctx.save();
+          ctx.globalAlpha = 0.2;
+          ctx.fillStyle = "#000";
+          ctx.beginPath();
+          ctx.ellipse(+8, +10, w * 0.22, h * 0.12, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+
+          const base = Math.atan2(p.diry, p.dirx);
+          ctx.rotate(base + (PLANE_CFG.spriteFix || 0));
+
+          // Lật dọc sau khi xoay để không bị "úp"
+          if (PLANE_CFG.flipVertical) ctx.scale(1, -1);
+
+          ctx.imageSmoothingEnabled = true;
+          // Khi đã scale(1,-1), toạ độ Y của ảnh phải đổi dấu ở offset
+          const drawY = PLANE_CFG.flipVertical ? +ay : -ay;
+          ctx.drawImage(img, -ax, drawY, w, h);
+
+          ctx.restore();
+        }
+
+        function drawBomb(b) {
+          // bóng bom đổ xuống mặt đất (ellipse) để dễ nhìn
+          ctx.save();
+          const t = clamp((b.y - 0) / (b.targetY - 0), 0, 1); // 0..1
+          const shadowR = 8 + 10 * t;
+          ctx.globalAlpha = 0.25;
+          ctx.fillStyle = "#000";
+          ctx.beginPath();
+          ctx.ellipse(
+            b.x + 6,
+            b.targetY + 4,
+            shadowR,
+            shadowR * 0.4,
+            0,
+            0,
+            Math.PI * 2
+          );
+          ctx.fill();
+          ctx.globalAlpha = 1;
+
+          // thân bom (tròn nhỏ rơi thẳng xuống)
+          const r = 5;
+          ctx.fillStyle = "#5b5f66";
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+          ctx.fill();
+          // highlight
+          ctx.fillStyle = "rgba(255,255,255,0.7)";
+          ctx.beginPath();
+          ctx.arc(b.x - 2, b.y - 2, r * 0.45, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
         }
 
         // ===== Tanks & Bullets =====
@@ -1993,6 +2244,13 @@
 
         function update(dt, now) {
           updateWind(dt, now);
+          if (!S.planeSpawned && S.elapsed >= PLANE_CFG.startAfter) {
+            spawnPlane();
+          }
+
+          // cập nhật máy bay & bom
+          updatePlanes(dt);
+          updateBombs(dt);
           // Items schedule
           if (S.itemPlan.stars.length && now >= S.itemPlan.stars[0]) {
             S.itemPlan.stars.shift();
@@ -3640,6 +3898,10 @@
               ctx.restore();
             }
           }
+          // planes
+          for (const p of S.planes) drawPlane(p);
+          for (const b of S.bombs) drawBomb(b);
+
           // bullets
           for (const b of S.bullets) {
             if (!b.active) continue;
