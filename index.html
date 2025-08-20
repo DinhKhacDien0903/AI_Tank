@@ -1767,26 +1767,49 @@
               gy = rand(GRID);
             const t = S.map[gy][gx];
             const key = `${gx},${gy}`;
-            if (t.type === "empty" && key !== `${S.base.gx},${S.base.gy}`) {
-              const p = toPx(gx, gy);
-              const startY = kind === "star" ? p.y - TILE * 3 : p.y;
-              S.items.push({
-                kind,
-                x: p.x,
-                y: startY,
-                // Thêm các thuộc tính cho hiệu ứng rơi
-                fallY: kind === "star" ? p.y - TILE * 3 : p.y, // vị trí bắt đầu rơi (cao hơn 3 tile nếu là star)
-                targetY: p.y, // vị trí đích
-                falling: kind === "star", // chỉ star mới rơi
-                fallSpeed: kind === "star" ? 0 : 0, // tốc độ rơi ban đầu
-                bounce: 0, // số lần nảy
-                bounceHeight: 0, // độ cao nảy
-                bouncePhase: 0, // pha nảy
-                expiresAt: performance.now() + 12000,
-                active: true,
-              });
-              break;
+
+            // Kiểm tra điều kiện cơ bản: tile phải empty và không phải base
+            if (t.type !== "empty" || key === `${S.base.gx},${S.base.gy}`)
+              continue;
+
+            const p = toPx(gx, gy);
+
+            // Kiểm tra không được rơi trên sông
+            if (isInRiver(p.x, p.y)) continue;
+
+            // Kiểm tra không được rơi trên cầu
+            if (isOnBridge(p.x, p.y)) continue;
+
+            // Kiểm tra Shovel không được rơi trong khu vực bảo vệ thành cổ (2 lớp tường)
+            if (kind === "shovel") {
+              const baseCx = S.base.gx,
+                baseCy = S.base.gy;
+              const dx = Math.abs(gx - baseCx);
+              const dy = Math.abs(gy - baseCy);
+              const maxDist = Math.max(dx, dy);
+
+              // Không spawn trong vùng 2 lớp tường bảo vệ (bán kính 2 ô từ base)
+              if (maxDist <= 2) continue;
             }
+
+            // Vị trí hợp lệ, tạo item
+            const startY = kind === "star" ? p.y - TILE * 3 : p.y;
+            S.items.push({
+              kind,
+              x: p.x,
+              y: startY,
+              // Thêm các thuộc tính cho hiệu ứng rơi
+              fallY: kind === "star" ? p.y - TILE * 3 : p.y, // vị trí bắt đầu rơi (cao hơi 3 tile nếu là star)
+              targetY: p.y, // vị trí đích
+              falling: kind === "star", // chỉ star mới rơi
+              fallSpeed: kind === "star" ? 0 : 0, // tốc độ rơi ban đầu
+              bounce: 0, // số lần nảy
+              bounceHeight: 0, // độ cao nảy
+              bouncePhase: 0, // pha nảy
+              expiresAt: performance.now() + 12000,
+              active: true,
+            });
+            break;
           }
         }
 
