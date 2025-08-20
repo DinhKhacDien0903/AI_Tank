@@ -8,11 +8,22 @@ link4: https://chatgpt.com/share/68a5bee8-4e74-800e-8000-14dc215ef29b
 note 20/8: Điều chỉnh cho cầu dễ sang hơn, đẹp hơn => Done
 - Tăng tốc độ gió cho cây => Done
 - Thay gạch đỏ, đá => Done, Sửa vị trí lo cốt không cho liên kết với vùng bảo vệ tường thành => Done
-- Thay star và icon hóa đá. Không cho rơi xuống sông hoặc thành cổ 
+- Thay star và icon hóa đá. Không cho rơi xuống sông hoặc thành cổ  => Done
 - Điều chỉnh lại vị trí cây, đá, tường đất => Done
-- Chỉnh lại xe tăng
+- Chỉnh lại xe tăng => Done
 - Điều chỉnh lại cầu => Done
-- Đạn bắn vào mép tường cũng dính => Tăng độ nhạy
+- Đạn bắn vào mép tường cũng dính => Tăng độ nhạy => Done
 - Điều chỉnh đạn: Done
 
 -> Chỉ cho star và khiên hiển thị ngoài khu vuecj bảo vệ thành cổ 2x2 tường => Done
+
+
+note 21/8:
+- Thêm tình tiết máy bay theo đợt
+- Bỏ bất tử
+- Bỏ xuất hiện star và khiên ngay lập tức, random lại cho giám khảo chơi
+
+
+Thêm âm thanh
+ - âm thanh khi xe nổ
+ - THay text, âm thanh khi thua và thắng

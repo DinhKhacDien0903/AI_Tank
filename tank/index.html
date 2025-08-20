@@ -264,7 +264,7 @@
         const MAX_ACTIVE_ENEMIES = 4,
           TOTAL_BASIC = 10,
           TOTAL_ARMORED = 10;
-        const DEV_GOD_MODE = true; // <- bật/tắt bất tử cho người chơi
+        const DEV_GOD_MODE = false; // <- bật/tắt bất tử cho người chơi
         // ===== Vietnam scheme colors =====
         // ===== Vietnam scheme colors =====
         const VN_COL = {
@@ -1732,23 +1732,18 @@
             explodeTankCinematic(t.x, t.y);
             playSfx("explode_tank");
           } catch (e) {}
-          //   if (t.isPlayer) {
-          //     S.lives = Math.max(0, S.lives - 1);
-          //     if (S.lives <= 0) {
-          //       endGame(false);
-          //       return;
-          //     }
-          //     const np = newPlayer();
-          //     S.playerId = np.id;
-          //     replacePlayer(t, np);
-          //     S.playerHP = np.hp;
-          //     S.playerPower = np.power;
 
-          //TODO: bất tử
           if (t.isPlayer) {
-            // Player bất tử: không trừ mạng, không respawn
-            t.active = true;
-            return;
+            S.lives = Math.max(0, S.lives - 1);
+            if (S.lives <= 0) {
+              endGame(false);
+              return;
+            }
+            const np = newPlayer();
+            S.playerId = np.id;
+            replacePlayer(t, np);
+            S.playerHP = np.hp;
+            S.playerPower = np.power;
           } else {
             S.spawn.active = Math.max(0, S.spawn.active - 1);
             S.enemiesRemaining = Math.max(0, S.enemiesRemaining - 1);
@@ -1766,19 +1761,21 @@
         // ===== Items =====
         function planItems() {
           const now = performance.now();
-          const plan = (count, minS, maxS) => {
+          const plan = (count, minS, maxS, forceFirstAt = null) => {
             const a = [];
             for (let i = 0; i < count; i++) {
-              a.push(now + (minS + Math.random() * (maxS - minS)) * 1000);
+              if (i === 0 && forceFirstAt !== null) {
+                // Item đầu tiên xuất hiện tại thời điểm được chỉ định
+                a.push(now + forceFirstAt * 1000);
+              } else {
+                a.push(now + (minS + Math.random() * (maxS - minS)) * 1000);
+              }
             }
             return a.sort((a, b) => a - b);
           };
-          //TODO: star appear
-          // S.itemPlan.stars = plan(3, 10, PLAY_SECONDS - 10);
-          // S.itemPlan.shovels = plan(2, 15, PLAY_SECONDS - 15);
 
-          S.itemPlan.stars = plan(5, 1, PLAY_SECONDS - 5); // 5 sao từ 1s -> 175s (nhiều hơn, sớm hơn)
-          S.itemPlan.shovels = plan(3, 8, PLAY_SECONDS - 10);
+          S.itemPlan.stars = plan(3, 25, PLAY_SECONDS - 30, 20); // Star đầu tiên xuất hiện sau 25s
+          S.itemPlan.shovels = plan(2, 30, PLAY_SECONDS - 35, 25); // Khiên đầu tiên xuất hiện sau 30s
         }
         function spawnItem(kind) {
           let tries = 50;
@@ -1812,17 +1809,17 @@
               if (maxDist <= 2) continue;
             }
 
-            // Vị trí hợp lệ, tạo item
-            const startY = kind === "star" ? p.y - TILE * 3 : p.y;
+            // Vị trí hợp lệ, tạo item - CẢ STAR VÀ SHOVEL ĐỀU RƠI
+            const startY = p.y - TILE * 3; // cả hai đều rơi từ trên cao
             S.items.push({
               kind,
               x: p.x,
               y: startY,
               // Thêm các thuộc tính cho hiệu ứng rơi
-              fallY: kind === "star" ? p.y - TILE * 3 : p.y, // vị trí bắt đầu rơi (cao hơi 3 tile nếu là star)
+              fallY: p.y - TILE * 3, // vị trí bắt đầu rơi (cao 3 tile cho cả star và shovel)
               targetY: p.y, // vị trí đích
-              falling: kind === "star", // chỉ star mới rơi
-              fallSpeed: kind === "star" ? 0 : 0, // tốc độ rơi ban đầu
+              falling: true, // CẢ STAR VÀ SHOVEL ĐỀU RƠI
+              fallSpeed: 0, // tốc độ rơi ban đầu
               bounce: 0, // số lần nảy
               bounceHeight: 0, // độ cao nảy
               bouncePhase: 0, // pha nảy
@@ -1871,7 +1868,6 @@
           S.status = "playing";
           S.running = true;
           planItems();
-          spawnItem("star");
           syncUI();
           overlay.style.display = "none";
           btnRestart.style.display = "none";
@@ -2683,6 +2679,7 @@
           ctx.lineTo(cx, cy - outer);
           ctx.closePath();
         }
+
         // Vẽ icon trái tim nhỏ (cx là tâm theo trục X, cy là mép trên)
         function drawHeartSmall(
           cx,
@@ -3613,24 +3610,31 @@
               ctx.stroke();
               ctx.restore();
             } else {
-              // Shovel với rotation
+              // Shield (thay Shovel) với rotation — giữ nguyên xoay/animation
+              // ctx.save();
+              // ctx.translate(it.x, it.y);
+              // ctx.rotate(it.rotation || 0);
+              // drawShieldIcon(TILE * 0.9);
+              // ctx.restore();
+
+              // Shield dùng ẢNH (giữ nguyên xoay)
               ctx.save();
               ctx.translate(it.x, it.y);
               ctx.rotate(it.rotation || 0);
 
-              // Vẽ shovel tại gốc (0,0) vì đã translate
-              const sx = -TILE / 2 + 4,
-                sy = -TILE / 2 + 4; // điều chỉnh để căn giữa
-              ctx.fillStyle = "#c0c0c0";
-              roundRect(sx, sy, TILE - 8, (TILE - 8) * 0.55, 6);
-              ctx.fill();
-              ctx.fillStyle = "#9a9a9a";
-              ctx.fillRect(
-                sx + (TILE - 8) * 0.46,
-                sy + (TILE - 8) * 0.55,
-                (TILE - 8) * 0.08,
-                (TILE - 8) * 0.4
-              );
+              // Lazy-load 1 lần, gắn vào S để tái dùng
+              if (!S._shieldImg) {
+                S._shieldImg = new Image();
+                S._shieldImg.src = "khien.png"; // đặt file cạnh index.html
+              }
+
+              // Vẽ khi ảnh sẵn sàng; chưa sẵn sàng thì bỏ qua frame này
+              const s = TILE * 1.0; // kích cỡ icon
+              if (S._shieldImg.complete && S._shieldImg.naturalWidth > 0) {
+                // Giữ tỉ lệ ảnh gốc (vuông). Centered để xoay đẹp
+                ctx.imageSmoothingEnabled = true;
+                ctx.drawImage(S._shieldImg, -s / 2, -s / 2, s, s);
+              }
               ctx.restore();
             }
           }
