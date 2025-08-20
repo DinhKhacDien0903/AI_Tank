@@ -1191,33 +1191,136 @@
         });
         S.bridges = [];
         buildRiverBridges();
-        // Steel clusters
-        [
-          [2, 2],
-          [12, 2],
-          [2, 7],
-          [12, 7],
-          [2, 11],
-          [12, 11],
-        ].forEach(([x, y]) => (S.map[y][x] = tile("steel", 3)));
-        // Brick clusters
-        [
-          [4, 4],
-          [10, 4],
-          [4, 10],
-          [10, 10],
-          [7, 6],
-          [7, 8],
-        ].forEach(([x, y]) => (S.map[y][x] = tile("brick", 1)));
-        // Bush overlays
-        [
-          [3, 5],
-          [11, 5],
-          [3, 9],
-          [11, 9],
-          [7, 4],
-          [7, 9],
-        ].forEach(([x, y]) => S.bushSet.add(`${x},${y}`));
+        // Steel & Brick layout (reworked as bunkers; keeps base walls; avoids river/bridge)
+        // Helpers (scoped inside setupLevel)
+        function setTileSafe(gx, gy, type) {
+          if (!within(gx, gy)) return;
+          const tt = S.map[gy][gx];
+          if (!tt) return;
+          if (tt.type === "river" || tt.type === "bridge") return;
+          if (tt.type === "base") return;
+          S.map[gy][gx] = tile(type, type === "steel" ? 3 : 1);
+        }
+        function bunker3x3(cx, cy) {
+          const P = [
+            ["steel", "brick", "steel"],
+            ["brick", "empty", "brick"],
+            ["steel", "brick", "steel"],
+          ];
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const t = P[dy + 1][dx + 1];
+              if (t !== "empty") setTileSafe(cx + dx, cy + dy, t);
+            }
+          }
+        }
+        function uBunker(cx, cy, openDir) {
+          // frame 3x3: bricks on edges, steel at corners; opening by dir
+          const edges = [];
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (Math.abs(dx) === 1 || Math.abs(dy) === 1) {
+                const type = (Math.abs(dx) === 1 && Math.abs(dy) === 1) ? "steel" : "brick";
+                edges.push([cx + dx, cy + dy, type]);
+              }
+            }
+          }
+          // open a side
+          if (openDir === "up") edges.push([cx - 1, cy - 1, "empty"], [cx, cy - 1, "empty"], [cx + 1, cy - 1, "empty"]);
+          if (openDir === "down") edges.push([cx - 1, cy + 1, "empty"], [cx, cy + 1, "empty"], [cx + 1, cy + 1, "empty"]);
+          if (openDir === "left") edges.push([cx - 1, cy - 1, "empty"], [cx - 1, cy, "empty"], [cx - 1, cy + 1, "empty"]);
+          if (openDir === "right") edges.push([cx + 1, cy - 1, "empty"], [cx + 1, cy, "empty"], [cx + 1, cy + 1, "empty"]);
+          for (const [gx, gy, tp] of edges) {
+            if (tp !== "empty") setTileSafe(gx, gy, tp);
+          }
+        }
+
+        // === Fortifications: fewer bunkers, smarter gaps; bushes increased ===
+        // Helpers (scoped inside setupLevel)
+        function setTileSafe(gx, gy, type) {
+          if (!within(gx, gy)) return;
+          const t = S.map[gy][gx];
+          if (!t) return;
+          // Không đặt lên sông/cầu
+          if (t.type === "river" || t.type === "bridge") return;
+          S.map[gy][gx] = tile(type, type === "steel" ? 3 : (type === "brick" ? 1 : undefined));
+        }
+        function bunker3x3(cx, cy) {
+          // thép ở góc, gạch ở cạnh, trống giữa
+          const P = [
+            ["steel", "brick", "steel"],
+            ["brick", "empty", "brick"],
+            ["steel", "brick", "steel"],
+          ];
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const tp = P[dy + 1][dx + 1];
+              if (tp === "empty") continue;
+              setTileSafe(cx + dx, cy + dy, tp);
+            }
+          }
+        }
+
+        // --- Place fewer bunkers (thoáng hơn để dễ di chuyển) ---
+        // Tuyệt đối không đè lên sông/cầu vì setTileSafe đã chặn.
+        bunker3x3(3, 3);      // top-left
+        bunker3x3(11, 3);     // top-right
+        for (let dx = 0; dx < 2; dx++) {
+          for (let dy = 0; dy < 2; dy++) {
+            setTileSafe(2 + dx, 12 + dy, "brick");   // trái
+            setTileSafe(11 + dx, 12 + dy, "brick");  // phải
+          }
+        }
+
+        // === Bush overlays (5 bụi mỗi bờ; không sát tường; auto fallback) ===
+        function canPlaceBush(gx, gy) {
+          if (!within(gx, gy)) return false;
+
+          // 1) Ô phải trống (không đè lô cốt/base)
+          const t = S.map[gy][gx];
+          if (!t || t.type !== "empty") return false;
+
+          // 2) Không trên sông/cầu
+          const p = toPx(gx, gy);
+          if (isInRiver(p.x, p.y)) return false;
+          if (isOnBridge(p.x, p.y)) return false;
+
+          // 3) Không đứng sát tường (tránh brick/steel trong bán kính 1 ô)
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (dx === 0 && dy === 0) continue;
+              const nx = gx + dx, ny = gy + dy;
+              if (!within(nx, ny)) continue;
+              const nt = S.map[ny][nx];
+              if (!nt) continue;
+              if (nt.type === "brick" || nt.type === "steel") return false;
+            }
+          }
+          return true;
+        }
+
+        // thử đặt tại (gx,gy); nếu không được thì thử các offset lân cận hợp lệ
+        function placeBushWithFallback(gx, gy) {
+          const OFF = [
+            [0, 0], [1, 0], [-1, 0], [0, 1], [0, -1],
+            [2, 0], [-2, 0], [0, 2], [0, -2]
+          ];
+          for (const [dx, dy] of OFF) {
+            const x = gx + dx, y = gy + dy;
+            if (canPlaceBush(x, y)) { S.bushSet.add(`${x},${y}`); return true; }
+          }
+          return false;
+        }
+
+        // 5 vị trí ƯU TIÊN cho mỗi bờ (y=6: bờ TRÊN, y=8: bờ DƯỚI)
+        // Lưu ý: nếu một toạ độ bị chặn bởi rule, placeBushWithFallback sẽ tự dịch 1–2 ô lân cận.
+        const TOP_BANK = [[5, 1], [8, 3], [2, 5], [10, 0], [14, 6]];   // 5 bụi bờ TRÊN
+        const BOTTOM_BANK = [[3, 11], [10, 8], [5, 8], [11, 10], [13, 13]];  // 5 bụi bờ DƯỚI
+
+        TOP_BANK.forEach(([bx, by]) => placeBushWithFallback(bx, by));
+        BOTTOM_BANK.forEach(([bx, by]) => placeBushWithFallback(bx, by));
+
+
         // Base
         S.base = { gx: 7, gy: 13, alive: true };
         S.map[S.base.gy][S.base.gx] = tile("base");
@@ -2796,6 +2899,164 @@
           + b.toString(16).padStart(2, "0");
       }
 
+      // === Riveted Steel Wall (blue-grey plates, seams, rivets, scratches) ===
+      function drawRivetedSteelTile(gx, gy, x, y, size) {
+        const rx = x, ry = y, rw = size, rh = size;
+
+        // Bảng màu (xanh-xám lạnh, khác rõ tường gạch ấm)
+        const COL = {
+          baseTop: "#5f6c79",
+          baseBot: "#3e4853",
+          seam: "#2b3139",       // đường ráp tấm
+          hi: "rgba(255,255,255,0.08)", // highlight mỏng
+          ao: "rgba(0,0,0,0.20)",       // inner shadow mép
+          rivetHi: "rgba(255,255,255,0.35)",
+          rivetLo: "rgba(0,0,0,0.40)",
+          scratchL: "rgba(255,255,255,0.05)",
+          scratchD: "rgba(0,0,0,0.08)"
+        };
+
+        // Nền thép (gradient dọc nhẹ)
+        const g = ctx.createLinearGradient(rx, ry, rx, ry + rh);
+        g.addColorStop(0.00, COL.baseTop);
+        g.addColorStop(1.00, COL.baseBot);
+        ctx.fillStyle = g;
+        ctx.fillRect(rx, ry, rw, rh);
+
+        // Pattern panel theo WORLD-SPACE (lặp theo khối 2x2 tile)
+        const PW = size * 2, PH = size * 2;
+        const p0x = Math.floor(rx / PW) * PW;
+        const p0y = Math.floor(ry / PH) * PH;
+
+        // Danh sách "tấm thép" trong 1 pattern 2x2 tile (tọa độ tương đối)
+        // (bố cục kiểu ảnh mẫu: miếng to/nhỏ xen kẽ tạo mạch "ziczac")
+        const R = [
+          // row trên
+          { x: 0, y: 0, w: size * 1.0, h: size * 0.7 },
+          { x: size * 1.0, y: 0, w: size * 1.0, h: size * 0.45 },
+          { x: size * 1.0, y: size * 0.45, w: size * 1.0, h: size * 0.25 },
+          // row dưới
+          { x: 0, y: size * 0.7, w: size * 0.9, h: size * 0.55 },
+          { x: size * 0.9, y: size * 0.7, w: size * 1.1, h: size * 0.35 },
+          { x: size * 1.2, y: size * 1.05, w: size * 0.8, h: size * 0.55 },
+          { x: 0, y: size * 1.25, w: size * 0.8, h: size * 0.75 },
+          { x: size * 0.8, y: size * 1.25, w: size * 1.2, h: size * 0.75 },
+        ];
+
+        // Vẽ các tấm trong vùng tile hiện tại (dịch pattern theo p0x/p0y)
+        for (let ty = p0y; ty < ry + rh; ty += PH) {
+          for (let tx = p0x; tx < rx + rw; tx += PW) {
+            for (const r of R) {
+              const px0 = tx + r.x, py0 = ty + r.y;
+              const px1 = px0 + r.w, py1 = py0 + r.h;
+
+              // cắt theo tile
+              const gx0 = Math.max(px0, rx);
+              const gy0 = Math.max(py0, ry);
+              const gx1 = Math.min(px1, rx + rw);
+              const gy1 = Math.min(py1, ry + rh);
+              const w = gx1 - gx0, h = gy1 - gy0;
+              if (w <= 0 || h <= 0) continue;
+
+              drawSteelPlateRect(gx0, gy0, w, h, COL);
+            }
+          }
+        }
+
+        // Vẽ đường ráp (seam) trên biên các tấm – mảnh & đậm hơn nền
+        ctx.strokeStyle = COL.seam;
+        ctx.lineWidth = 2;
+
+        for (let ty = p0y; ty < ry + rh; ty += PH) {
+          for (let tx = p0x; tx < rx + rw; tx += PW) {
+            for (const r of R) {
+              const px0 = tx + r.x, py0 = ty + r.y;
+              const px1 = px0 + r.w, py1 = py0 + r.h;
+
+              // Chỉ kẻ seam nằm bên trong tile hiện tại
+              // Trên
+              if (py0 >= ry && py0 <= ry + rh) {
+                const sx0 = Math.max(px0, rx), sx1 = Math.min(px1, rx + rw);
+                if (sx1 > sx0) { ctx.beginPath(); ctx.moveTo(sx0, py0); ctx.lineTo(sx1, py0); ctx.stroke(); }
+              }
+              // Dưới
+              if (py1 >= ry && py1 <= ry + rh) {
+                const sx0 = Math.max(px0, rx), sx1 = Math.min(px1, rx + rw);
+                if (sx1 > sx0) { ctx.beginPath(); ctx.moveTo(sx0, py1); ctx.lineTo(sx1, py1); ctx.stroke(); }
+              }
+              // Trái
+              if (px0 >= rx && px0 <= rx + rw) {
+                const sy0 = Math.max(py0, ry), sy1 = Math.min(py1, ry + rh);
+                if (sy1 > sy0) { ctx.beginPath(); ctx.moveTo(px0, sy0); ctx.lineTo(px0, sy1); ctx.stroke(); }
+              }
+              // Phải
+              if (px1 >= rx && px1 <= rx + rw) {
+                const sy0 = Math.max(py0, ry), sy1 = Math.min(py1, ry + rh);
+                if (sy1 > sy0) { ctx.beginPath(); ctx.moveTo(px1, sy0); ctx.lineTo(px1, sy1); ctx.stroke(); }
+              }
+            }
+          }
+        }
+
+        // Đinh tán ở các góc/mid-edge các tấm (nhỏ, nổi nhẹ)
+        for (let ty = p0y; ty < ry + rh; ty += PH) {
+          for (let tx = p0x; tx < rx + rw; tx += PW) {
+            for (const r of R) {
+              const corners = [
+                [tx + r.x + 3, ty + r.y + 3],
+                [tx + r.x + r.w - 3, ty + r.y + 3],
+                [tx + r.x + 3, ty + r.y + r.h - 3],
+                [tx + r.x + r.w - 3, ty + r.y + r.h - 3],
+              ];
+              for (const [cx, cy] of corners) {
+                if (cx < rx || cx > rx + rw || cy < ry || cy > ry + rh) continue;
+                drawRivet(cx, cy, 2, COL);
+              }
+            }
+          }
+        }
+      }
+
+      // Vẽ 1 tấm thép (bevel + xước nhẹ)
+      function drawSteelPlateRect(x, y, w, h, COL) {
+        // Inner bevel (AO)
+        ctx.fillStyle = COL.ao;
+        ctx.fillRect(x, y, w, 1);
+        ctx.fillRect(x, y + h - 1, w, 1);
+        ctx.fillRect(x, y, 1, h);
+        ctx.fillRect(x + w - 1, y, 1, h);
+
+        // Highlight mềm bên trong (tránh bóng kiểu gương)
+        ctx.fillStyle = COL.hi;
+        ctx.fillRect(x + 1, y + 1, w - 2, 1);
+        ctx.fillRect(x + 1, y + 1, 1, h - 2);
+
+        // Vệt xước rất nhẹ (2 đường sáng/tối)
+        if (w > 8 && h > 8) {
+          ctx.strokeStyle = COL.scratchL;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x + 3, y + Math.round(h * 0.35));
+          ctx.lineTo(x + w - 3, y + Math.round(h * 0.35));
+          ctx.stroke();
+
+          ctx.strokeStyle = COL.scratchD;
+          ctx.beginPath();
+          ctx.moveTo(x + 3, y + Math.round(h * 0.70));
+          ctx.lineTo(x + w - 3, y + Math.round(h * 0.70));
+          ctx.stroke();
+        }
+      }
+
+      // Đinh tán (nổi nhẹ bằng 2 vòng đồng tâm)
+      function drawRivet(cx, cy, r, COL) {
+        // bóng
+        ctx.fillStyle = COL.rivetLo;
+        ctx.beginPath(); ctx.arc(cx + 0.5, cy + 0.7, r, 0, Math.PI * 2); ctx.fill();
+        // highlight
+        ctx.fillStyle = COL.rivetHi;
+        ctx.beginPath(); ctx.arc(cx - 0.4, cy - 0.4, r * 0.55, 0, Math.PI * 2); ctx.fill();
+      }
 
 
       function draw() {
@@ -2822,12 +3083,7 @@
             } else if (t.type === "brick") {
               drawClassicBrickWallTile(gx, gy, x, y, TILE);
             } else if (t.type === "steel") {
-              ctx.fillStyle = "#9aa3ad";
-              roundRect(x + 2, y + 2, TILE - 4, TILE - 4, 4);
-              ctx.fill();
-              ctx.strokeStyle = "#6b7680";
-              ctx.lineWidth = 2;
-              ctx.stroke();
+              drawRivetedSteelTile(gx, gy, x, y, TILE);
             } else if (t.type === "river") {
               // River tile no longer painted per-tile (drawn by ribbon). Do nothing here.
             } else if (t.type === "base") {
