@@ -9,7 +9,8 @@ note 20/8: Điều chỉnh cho cầu dễ sang hơn, đẹp hơn
 - Tăng tốc độ gió cho cây => Done
 - Thay gạch đỏ, đá => Done, Sửa vị trí lo cốt không cho liên kết với vùng bảo vệ tường thành => Done
 - Thay star và icon hóa đá. Không cho rơi xuống sông hoặc thành cổ
-- Điều chỉnh lại vị trí cây, đá, tường đất
+- Điều chỉnh lại vị trí cây, đá, tường đất => Done
 - Chỉnh lại xe tăng
+- Điều chỉnh lại cầu => Done
 - Đạn bắn vào mép tường cũng dính => Tăng độ nhạy
 - Điều chỉnh đạn: Done
