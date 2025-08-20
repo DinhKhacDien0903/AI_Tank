@@ -1596,10 +1596,12 @@
         }
         function blockedForTank(x, y, size) {
           const half = size / 2;
-          const left = Math.floor((x - half) / TILE),
-            right = Math.floor((x + half) / TILE),
-            top = Math.floor((y - half) / TILE),
-            bottom = Math.floor((y + half) / TILE);
+          // Thêm buffer nhỏ để tránh góc chết
+          const buffer = 2; // pixel
+          const left = Math.floor((x - half + buffer) / TILE),
+            right = Math.floor((x + half - buffer) / TILE),
+            top = Math.floor((y - half + buffer) / TILE),
+            bottom = Math.floor((y + half - buffer) / TILE);
           // === KIỂM TRA ƯU TIÊN: Xe đang ở trên cầu? ===
           const centerOnBridge = isOnBridge(x, y);
 
@@ -1824,6 +1826,9 @@
               bounce: 0, // số lần nảy
               bounceHeight: 0, // độ cao nảy
               bouncePhase: 0, // pha nảy
+              // Thêm rotation cho hiệu ứng xoay
+              rotation: 0, // góc xoay hiện tại (radian)
+              rotationSpeed: kind === "star" ? 1.5 : 1.2, // tốc độ xoay (radian/s) - star nhanh hơn shovel một chút
               expiresAt: performance.now() + 12000,
               active: true,
             });
@@ -2003,6 +2008,10 @@
           // === CẬP NHẬT HIỆU ỨNG RƠI CHO ITEMS ===
           for (const it of S.items) {
             if (!it.active) continue;
+
+            // Cập nhật rotation (xoay đều cho cả star và shovel)
+            it.rotation = (it.rotation || 0) + (it.rotationSpeed || 1.0) * dt;
+            if (it.rotation > Math.PI * 2) it.rotation -= Math.PI * 2; // giữ trong 0-2π
 
             if (it.falling && it.y < it.targetY) {
               // Đang rơi xuống
@@ -2673,6 +2682,52 @@
           }
           ctx.lineTo(cx, cy - outer);
           ctx.closePath();
+        }
+        // Vẽ icon trái tim nhỏ (cx là tâm theo trục X, cy là mép trên)
+        function drawHeartSmall(
+          cx,
+          cy,
+          size,
+          fill = "#e74c3c",
+          stroke = "#5a1a1a"
+        ) {
+          const w = size,
+            h = Math.round(size * 0.9);
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(cx, cy + h * 0.25);
+          ctx.bezierCurveTo(
+            cx,
+            cy,
+            cx - w * 0.5,
+            cy,
+            cx - w * 0.5,
+            cy + h * 0.25
+          );
+          ctx.bezierCurveTo(
+            cx - w * 0.5,
+            cy + h * 0.55,
+            cx,
+            cy + h * 0.7,
+            cx,
+            cy + h
+          );
+          ctx.bezierCurveTo(
+            cx,
+            cy + h * 0.7,
+            cx + w * 0.5,
+            cy + h * 0.55,
+            cx + w * 0.5,
+            cy + h * 0.25
+          );
+          ctx.bezierCurveTo(cx + w * 0.5, cy, cx, cy, cx, cy + h * 0.25);
+          ctx.closePath();
+          ctx.fillStyle = fill;
+          ctx.fill();
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = stroke;
+          ctx.stroke();
+          ctx.restore();
         }
 
         // ===== Player Vietnam decals (star & flag) =====
@@ -3546,24 +3601,37 @@
               ctx.shadowColor = "#ffd700";
               ctx.shadowBlur = it.falling ? 20 : 10;
 
+              // Áp dụng rotation cho star
+              ctx.translate(it.x, it.y);
+              ctx.rotate(it.rotation || 0);
+
               ctx.fillStyle = "#ffd700";
-              drawStar(it.x, it.y, 5, TILE / 2 - 4, 6);
+              drawStar(0, 0, 5, TILE / 2 - 4, 6); // vẽ tại gốc (0,0) vì đã translate
               ctx.fill();
               ctx.strokeStyle = "#9e7b00";
               ctx.lineWidth = 2;
               ctx.stroke();
               ctx.restore();
             } else {
+              // Shovel với rotation
+              ctx.save();
+              ctx.translate(it.x, it.y);
+              ctx.rotate(it.rotation || 0);
+
+              // Vẽ shovel tại gốc (0,0) vì đã translate
+              const sx = -TILE / 2 + 4,
+                sy = -TILE / 2 + 4; // điều chỉnh để căn giữa
               ctx.fillStyle = "#c0c0c0";
-              roundRect(x + 4, y + 4, TILE - 8, (TILE - 8) * 0.55, 6);
+              roundRect(sx, sy, TILE - 8, (TILE - 8) * 0.55, 6);
               ctx.fill();
               ctx.fillStyle = "#9a9a9a";
               ctx.fillRect(
-                x + (TILE - 8) * 0.46,
-                y + 4 + (TILE - 8) * 0.55,
+                sx + (TILE - 8) * 0.46,
+                sy + (TILE - 8) * 0.55,
                 (TILE - 8) * 0.08,
                 (TILE - 8) * 0.4
               );
+              ctx.restore();
             }
           }
           // bullets
@@ -3822,10 +3890,35 @@
               ctx.restore();
             }
 
-            // ---------- HP nhỏ ở đuôi ----------
-            ctx.fillStyle = "#000";
-            for (let i = 0; i < t.hp; i++)
-              ctx.fillRect(x + 4 + i * 6, y + t.size - 10, 4, 6);
+            // ---------- HP bằng icon trái tim gắn ở ĐUÔI xe ----------
+            {
+              const n = Math.max(0, t.hp | 0);
+              if (n > 0) {
+                const SIZ = Math.max(5, Math.floor(t.size * 0.18)); // kích cỡ tim
+                const GAP = Math.max(2, Math.floor(SIZ * 0.25)); // khoảng cách
+                const fill = "#e74c3c",
+                  stroke = "#5a1a1a";
+
+                if (t.dir === "up" || t.dir === "down") {
+                  // Đuôi ở cạnh đối diện với hướng nòng; xếp theo TRỤC NGANG
+                  const baseY = t.dir === "up" ? y + t.size - SIZ - 2 : y + 2;
+                  const totalW = n * SIZ + (n - 1) * GAP;
+                  let cx = t.x - totalW / 2 + SIZ / 2;
+                  for (let i = 0; i < n; i++, cx += SIZ + GAP)
+                    drawHeartSmall(cx, baseY, SIZ, fill, stroke);
+                } else {
+                  // left/right: đuôi ở cạnh trái/phải; xếp theo TRỤC DỌC
+                  const baseXLeft = x + 2;
+                  const baseXRight = x + t.size - SIZ - 2;
+                  const cxTail =
+                    (t.dir === "right" ? baseXLeft : baseXRight) + SIZ / 2;
+                  const totalH = n * SIZ + (n - 1) * GAP;
+                  let cy = t.y - totalH / 2;
+                  for (let i = 0; i < n; i++, cy += SIZ + GAP)
+                    drawHeartSmall(cxTail, cy, SIZ, fill, stroke);
+                }
+              }
+            }
           }
 
           // explosions (theo kind)
