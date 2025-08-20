@@ -23,8 +23,9 @@ note 21/8:
 - Thêm tình tiết máy bay theo đợt
 - Bỏ bất tử => Done
 - Bỏ xuất hiện star và khiên ngay lập tức, random lại cho giám khảo chơi => Done
-
+- Chỉnh lại ô mà bomb rơi => ran dom
 
 Thêm âm thanh
  - âm thanh khi xe nổ
  - THay text, âm thanh khi thua và thắng
+ - âm thanh máy bay
