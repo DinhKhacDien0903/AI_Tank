@@ -221,18 +221,15 @@
         <b>Luật chơi</b>
         <ul>
           <li>Diệt 20 xe địch (10 Basic, 10 Armored) trong 3 phút.</li>
-          <li>
-            Bảo vệ căn cứ đại bàng (2 lớp gạch). Shovel biến tường thành thép
-            20s và tự hồi phục.
+          <li>Bảo vệ căn cứ đại bàng (2 lớp gạch). Shovel biến tường thành thép 20s; hết thời gian tự hồi phục tường
+            gạch.</li>
+          <li>Star: +1 power; xuất hiện ngẫu nhiên. Mỗi vật phẩm +50 điểm.</li>
+          <li>Máy bay: Nhanh hơn xe tăng ×2; ra khỏi bản đồ thì biến mất; không thể bắn hạ và không tính vào 20 xe địch.
           </li>
-          <li>
-            Star tăng sức mạnh đạn +1 (tối đa 3). Mỗi vật phẩm +50 điểm.
-          </li>
-          <li>
-            Thua khi hết 3 mạng hoặc căn cứ bị phá. Hết giờ mà căn cứ còn &
-            còn mạng ⇒ Thắng.
-          </li>
+          <li>Bom máy bay: mỗi lần chỉ 1 quả</li>
+          <li>Thua khi hết 3 mạng hoặc căn cứ bị phá. Hết giờ mà căn cứ còn & còn mạng ⇒ Thắng.</li>
         </ul>
+
         <p class="tips">
           Gợi ý: Chặn đường hẹp, tận dụng sông & bụi cây để áp sát!
         </p>
@@ -256,7 +253,7 @@
       const PLAY_SECONDS = 180; // 3 minutes
       // === Airplane & Bomb config ===
       const PLANE_CFG = {
-        startAfter: 30, // xuất hiện sau 30s
+        startAfter: 25, // xuất hiện sau 30s
         speed: 170, // nhanh gấp ~2 lần tank người chơi (100)
         dropCount: 6, // mỗi lần bay thả 5 quả bom
         size: 22, // kích thước vẽ máy bay (px)
@@ -322,22 +319,6 @@
 
         GROUND_PATTERN = ctx.createPattern(p, "repeat");
         return GROUND_PATTERN;
-      }
-
-      // Vignette tối góc cho cảm giác khói bụi đậm ở rìa
-      function drawVignette(ctx, w, h) {
-        const rg = ctx.createRadialGradient(
-          w / 2,
-          h * 0.55,
-          w * 0.2,
-          w / 2,
-          h * 0.55,
-          w * 0.85
-        );
-        rg.addColorStop(0, "rgba(0,0,0,0)");
-        rg.addColorStop(1, "rgba(0,0,0,0.35)");
-        ctx.fillStyle = rg;
-        ctx.fillRect(0, 0, w, h);
       }
 
       // ===== Thạch Hãn River: carve tiles by a horizontal sine-band =====
@@ -646,51 +627,6 @@
           if (isInRiver(px, py) && !isOnBridge(px, py)) return true;
         }
         return false;
-      }
-
-      // ===== Vẽ 1 tile sông với sóng NGANG (foam) động =====
-      function drawThachHanRiverTile(gx, gy, x, y, size) {
-        const t = performance.now() / 1000;
-
-        // Nước: xanh sâu -> xanh sáng (theo chiều dọc tile)
-        const g = ctx.createLinearGradient(x, y, x, y + size);
-        g.addColorStop(0, "#144b63");
-        g.addColorStop(1, "#2aa1d3");
-        ctx.fillStyle = g;
-        ctx.fillRect(x, y, size, size);
-
-        // 3 “cột” sóng chạy NGANG trong một tile
-        // Pha lệch theo (gx,gy) để tránh đồng bộ cứng
-        const basePhase = t * 1.0 + gx * 0.25 + gy * 0.15;
-        ctx.lineWidth = 2;
-
-        for (let i = 0; i < 3; i++) {
-          const colX = x + size * (0.2 + i * 0.3); // 3 dải trong 1 tile
-          const amp = 2 + i * 0.7; // biên độ nhẹ
-          const k = 0.085; // mật độ sóng theo trục Y
-
-          ctx.beginPath();
-          for (let j = 0; j <= 6; j++) {
-            const py = y + (size / 6) * j;
-            const wave = Math.sin(basePhase + py * k + i * 0.9) * amp;
-            const px = colX + wave; // LỆCH THEO TRỤC X => sóng NGANG
-            if (j === 0) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
-          }
-          ctx.strokeStyle = "rgba(191,231,250,0.60)"; // bọt sáng
-          ctx.stroke();
-        }
-
-        // vệt bọt mảnh trôi theo chiều nước (trái -> phải)
-        const drift = (t * 36 + gy * 11) % size;
-        ctx.globalAlpha = 0.25;
-        ctx.fillStyle = "rgba(255,255,255,0.18)";
-        ctx.fillRect(x + drift, y + size * 0.3, 2, size * 0.4);
-        ctx.globalAlpha = 1;
-
-        // viền tối nhẹ
-        ctx.strokeStyle = "rgba(0,0,0,0.15)";
-        ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
       }
 
       // ===== Vẽ dải sông cong theo S.riverPath =====
@@ -1135,13 +1071,66 @@
             break;
           }
           case "explode_tank": {
-            const g = noise(0.28, 0.8, 2400);
-            env(g, 0.006, 0.24);
-            // thêm sub boom
-            const sub = tone("sine", 90, 0.22, 0.4);
-            env(sub, 0.003, 0.2);
+            // "ĐOÀNG — ĐOÀNG": 2 cú crack nhanh + thân nổ trầm nhẹ
+            const t0 = AUDIO.ctx.currentTime;
+
+            // Tạo burst noise có thể hẹn giờ start (không dùng noise() vì noise() start ngay)
+            const noiseBurst = (at, dur = 0.10, vol = 0.9, hpFreq = 1800) => {
+              const sr = AUDIO.ctx.sampleRate;
+              const buf = AUDIO.ctx.createBuffer(1, Math.max(1, (sr * dur) | 0), sr);
+              const data = buf.getChannelData(0);
+              for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+
+              const src = AUDIO.ctx.createBufferSource();
+              src.buffer = buf;
+              const hp = AUDIO.ctx.createBiquadFilter();
+              hp.type = "highpass";
+              hp.frequency.value = hpFreq;
+
+              const g = gain(vol);
+              src.connect(hp); hp.connect(g);
+
+              g.gain.setValueAtTime(0.0001, at);
+              g.gain.linearRampToValueAtTime(vol, at + 0.008);
+              g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+
+              src.start(at);
+              src.stop(at + dur);
+            };
+
+            // Thêm “click” cao độ ngắn để nghe rõ chữ "đoàng"
+            const pitchBlip = (at, f0 = 900, f1 = 350, vol = 0.42) => {
+              const o = AUDIO.ctx.createOscillator();
+              o.type = "square";
+              const g = gain(vol);
+              o.connect(g);
+
+              o.frequency.setValueAtTime(f0, at);
+              o.frequency.exponentialRampToValueAtTime(f1, at + 0.08);
+
+              g.gain.setValueAtTime(0.0001, at);
+              g.gain.linearRampToValueAtTime(0.6, at + 0.01);
+              g.gain.exponentialRampToValueAtTime(0.0001, at + 0.11);
+
+              o.start(at);
+              o.stop(at + 0.12);
+            };
+
+            // ĐOÀNG 1
+            noiseBurst(t0 + 0.00, 0.10, 0.95, 1800);
+            pitchBlip(t0 + 0.00, 900, 350, 0.42);
+
+            // ĐOÀNG 2 (trễ ~120ms)
+            noiseBurst(t0 + 0.12, 0.10, 0.9, 1800);
+            pitchBlip(t0 + 0.12, 800, 300, 0.38);
+
+            // Thân nổ trầm (khối thép rơi)
+            const body = tone("sine", 95, 0.26, 0.45);
+            env(body, 0.006, 0.22);
+
             break;
           }
+
           case "base_destroyed": {
             // tiếng rơi pitch + noise
             const o = AUDIO.ctx.createOscillator();
@@ -2711,92 +2700,6 @@
         S.explosions = S.explosions.filter((e) => now - e.start < e.duration);
         updateSmokes(dt);
       }
-      // ===== EFFECTS: hit burst & tank explosion =====
-      function spawnHitBurst(x, y, who = "enemy") {
-        const col = who === "player" ? BULLET_COL.player : BULLET_COL.enemy;
-
-        // 1 vòng xung kích mờ
-        S.particles.push({
-          kind: "ring",
-          x,
-          y,
-          r: 3,
-          rGrow: 60, // px/s
-          a: 0.55,
-          aFade: 2.8, // alpha giảm /s
-          color: col.aura,
-          life: 0.25,
-        });
-
-        // tia lửa bay ra
-        const n = 10;
-        for (let i = 0; i < n; i++) {
-          const ang = Math.random() * Math.PI * 2;
-          const spd = 140 + Math.random() * 120;
-          S.particles.push({
-            kind: "spark",
-            x,
-            y,
-            vx: Math.cos(ang) * spd,
-            vy: Math.sin(ang) * spd,
-            a: 0.9,
-            aFade: 3.5,
-            color: col.core,
-            w: 2,
-            life: 0.25 + Math.random() * 0.15,
-          });
-        }
-      }
-
-      function spawnTankExplosion(t, who = "enemy") {
-        // dùng hiệu ứng nổ có sẵn (vòng tròn to)
-        spawnExplosion(t.x, t.y, true);
-
-        const col = who === "player" ? BULLET_COL.player : BULLET_COL.enemy;
-
-        // nhiều "fireball" nhỏ
-        for (let i = 0; i < 6; i++) {
-          const ang = Math.random() * Math.PI * 2;
-          const spd = 60 + Math.random() * 90;
-          S.particles.push({
-            kind: "fire",
-            x: t.x,
-            y: t.y,
-            vx: Math.cos(ang) * spd,
-            vy: Math.sin(ang) * spd,
-            r: 6 + Math.random() * 6,
-            grow: 70, // px/s
-            a: 0.85,
-            aFade: 1.8,
-            core: "#fff",
-            edge: col.core,
-            life: 0.45 + Math.random() * 0.25,
-          });
-        }
-
-        // mảnh văng (debris)
-        for (let i = 0; i < 12; i++) {
-          const ang = Math.random() * Math.PI * 2;
-          const spd = 120 + Math.random() * 160;
-          S.particles.push({
-            kind: "debris",
-            x: t.x,
-            y: t.y,
-            vx: Math.cos(ang) * spd,
-            vy: Math.sin(ang) * spd - 80,
-            ax: 0,
-            ay: 220, // rơi xuống (gravity)
-            rot: Math.random() * Math.PI,
-            vr: -2 + Math.random() * 4, // quay
-            w: 3 + Math.random() * 3,
-            h: 2 + Math.random() * 2,
-            color: "#5c4a2f",
-            a: 0.95,
-            aFade: 1.6,
-            life: 0.6 + Math.random() * 0.4,
-          });
-        }
-      }
 
       function updateParticles(dt) {
         for (let i = S.particles.length - 1; i >= 0; i--) {
@@ -3186,66 +3089,6 @@
 
         ctx.fillStyle = "#ffd54d";
         drawStar(midX, midY, 5, fh * 0.35, fh * 0.15);
-        ctx.fill();
-      }
-
-      function drawVNDecals(t, x, y) {
-        // x,y: góc trái–trên của thân (đã trừ gap ở phần body)
-        const bodyW = t.size - 2 * Math.max(4, Math.floor(t.size * 0.14)); // đúng bằng khối thân bạn vẽ
-        const bodyH = bodyW;
-
-        // 1) Ngôi sao vàng ở hông (cố định, không xoay theo nòng)
-        const cx = x + bodyW * 0.3;
-        const cy = y + bodyH * 0.5;
-        const starOuter = Math.max(6, Math.floor(t.size * 0.12));
-        const starInner = Math.max(3, Math.floor(starOuter * 0.45));
-        // viền tối nhỏ
-        ctx.fillStyle = VN_COL.dark;
-        drawStar(cx, cy, 5, starOuter + 2, starInner + 1);
-        ctx.fill();
-        // sao vàng
-        ctx.fillStyle = VN_COL.star;
-        drawStar(cx, cy, 5, starOuter, starInner);
-        ctx.fill();
-
-        // 2) Cờ đỏ sao vàng trên cột ăng-ten phía sau
-        const poleH = Math.max(18, Math.floor(t.size * 0.85));
-        const poleX = x + bodyW * 0.82;
-        const poleY = y - Math.max(6, Math.floor(t.size * 0.18));
-        // cột
-        ctx.strokeStyle = "#bfbfbf";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(poleX, poleY);
-        ctx.lineTo(poleX, poleY - poleH);
-        ctx.stroke();
-
-        // cờ (phấp phới nhẹ theo thời gian)
-        const now = performance.now() / 1000;
-        const wave = Math.sin(now * 6) * 3; // biên độ sóng
-        const fw = Math.max(16, Math.floor(t.size * 0.9));
-        const fh = Math.max(10, Math.floor(t.size * 0.45));
-        const fx = poleX + 2;
-        const fy = poleY - poleH + fh / 2;
-
-        ctx.fillStyle = VN_COL.flagR;
-        ctx.beginPath();
-        ctx.moveTo(fx, fy - fh / 2);
-        ctx.lineTo(fx + fw * 0.5, fy - fh / 2 + wave);
-        ctx.lineTo(fx + fw, fy + fh / 2 - wave);
-        ctx.lineTo(fx + fw * 0.5, fy + fh / 2);
-        ctx.closePath();
-        ctx.fill();
-
-        // sao nhỏ trên nền cờ
-        ctx.fillStyle = VN_COL.star;
-        drawStar(
-          fx + fw * 0.45,
-          fy,
-          5,
-          Math.max(5, Math.floor(fh * 0.35)),
-          Math.max(2, Math.floor(fh * 0.17))
-        );
         ctx.fill();
       }
 
@@ -4469,50 +4312,6 @@
         resetGame();
       };
       // ===== Sound UI init & events =====
-      (function initSoundUI() {
-        // đọc prefs đã lưu
-        loadSoundPref(); // ON/OFF
-        loadVolumePref(); // slider (0..100 hiển thị)
-        updateSoundUI(); // cập nhật pill Sound
-        updateVolumeUI(); // đồng bộ trạng thái slider
-
-        // Toggle Sound ON/OFF (click + keyboard)
-        if (btnSound) {
-          const toggleSound = () => {
-            ensureAudio();
-            AUDIO.enabled = !AUDIO.enabled;
-            try {
-              if (AUDIO.ctx)
-                AUDIO.enabled ? AUDIO.ctx.resume() : AUDIO.ctx.suspend();
-            } catch (e) { }
-            saveSoundPref();
-            updateSoundUI();
-            updateVolumeUI();
-          };
-          btnSound.addEventListener("click", toggleSound);
-          btnSound.addEventListener("keydown", (e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              toggleSound();
-            }
-          });
-        }
-
-        // Slider volume (0..100 -> 0..1)
-        if (volSlider) {
-          const onSlide = (val) => {
-            const v = Math.max(0, Math.min(100, Number(val))) / 100;
-            // nếu chưa có ctx, chỉ lưu pref; khi Start mới apply
-            if (AUDIO.ctx && AUDIO.master) AUDIO.master.gain.value = v;
-            saveVolumePref(v);
-          };
-          volSlider.addEventListener("input", (e) => onSlide(e.target.value));
-          volSlider.addEventListener("change", (e) =>
-            onSlide(e.target.value)
-          );
-        }
-      })();
-
       // Pre-draw map for menu
       setupLevel();
       draw();

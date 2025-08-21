@@ -26,6 +26,6 @@ note 21/8:
 - Chỉnh lại ô mà bomb rơi => ran dom => Done
 
 Thêm âm thanh
- - âm thanh khi xe nổ
+ - âm thanh khi xe nổ => Done
  - THay text, âm thanh khi thua và thắng
- - âm thanh máy bay
+ - âm thanh máy bay => Done
