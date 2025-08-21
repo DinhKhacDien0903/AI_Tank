@@ -256,8 +256,8 @@
       const PLAY_SECONDS = 180; // 3 minutes
       // === Airplane & Bomb config ===
       const PLANE_CFG = {
-        startAfter: 5, // xuất hiện sau 50s
-        speed: 200, // nhanh gấp ~2 lần tank người chơi (100)
+        startAfter: 5, // xuất hiện sau 35s
+        speed: 170, // nhanh gấp ~2 lần tank người chơi (100)
         dropCount: 6, // mỗi lần bay thả 5 quả bom
         size: 22, // kích thước vẽ máy bay (px)
         bombFall: 260, // tốc độ rơi của bom (px/s)
@@ -1190,6 +1190,94 @@
             env(g, 0.005, 0.5);
             break;
           }
+          // ===== NEW: tiếng máy bay bay (loop) =====
+          case "plane_start": {
+            // “ù ù ù” – hum tần số thấp + tremolo nhẹ
+            ensureAudio();
+            // node giữ tham chiếu để tắt sau này
+            if (AUDIO._plane) { try { playSfx("plane_stop"); } catch (e) { } }
+
+            const t0 = AUDIO.ctx.currentTime;
+
+            // hum chính ~90Hz
+            const hum = AUDIO.ctx.createOscillator();
+            hum.type = "sine";
+            hum.frequency.setValueAtTime(90, t0);
+
+            // thêm 1 hài cao hơn ~180Hz rất nhỏ để dày tiếng
+            const hum2 = AUDIO.ctx.createOscillator();
+            hum2.type = "sine";
+            hum2.frequency.setValueAtTime(180, t0);
+
+            // gain chính cho hum
+            const gHum = gain(0.35);
+
+            // Tremolo (ù ù ù): LFO 2.2Hz điều khiển biên độ
+            const lfo = AUDIO.ctx.createOscillator();
+            lfo.type = "sine";
+            lfo.frequency.setValueAtTime(2.2, t0);
+            const lfoGain = AUDIO.ctx.createGain();
+            lfoGain.gain.value = 0.35; // độ sâu dao động
+            lfo.connect(lfoGain);
+            lfoGain.connect(gHum.gain);
+
+            hum.connect(gHum);
+            hum2.connect(gHum);
+
+            hum.start(t0);
+            hum2.start(t0 + 0.02);
+            lfo.start(t0 + 0.01);
+
+            AUDIO._plane = { hum, hum2, lfo, g: gHum };
+            break;
+          }
+          case "plane_stop": {
+            const P = AUDIO._plane;
+            if (P) {
+              const t1 = AUDIO.ctx.currentTime;
+              // fade-out ngắn cho êm tai
+              try {
+                P.g.gain.cancelScheduledValues(t1);
+                P.g.gain.setValueAtTime(P.g.gain.value, t1);
+                P.g.gain.exponentialRampToValueAtTime(0.0001, t1 + 0.20);
+              } catch (e) { }
+              try { P.hum.stop(t1 + 0.22); } catch (e) { }
+              try { P.hum2.stop(t1 + 0.22); } catch (e) { }
+              try { P.lfo.stop(t1 + 0.22); } catch (e) { }
+              AUDIO._plane = null;
+            }
+            break;
+          }
+
+
+          // ===== NEW: bom nổ =====
+          case "bomb_blast": {
+            ensureAudio();
+            const t = AUDIO.ctx.currentTime;
+
+            // Nhát 1 – “uỳnh”: noise + sub
+            const n1 = noise(0.32, 0.9, 1400); // noise low-pass
+            env(n1, 0.004, 0.28);
+            const sub1 = tone("sine", 56, 0.34, 0.85); // sub ~56Hz
+            env(sub1, 0.006, 0.30);
+
+            // Nhát 2 – “uỳnh” lặp lại rất nhanh (double-hit)
+            const t2 = t + 0.10;
+            const n2 = noise(0.26, 0.7, 1200);
+            n2.gain.setValueAtTime(0.0001, t2);
+            n2.gain.linearRampToValueAtTime(0.6, t2 + 0.02);
+            n2.gain.exponentialRampToValueAtTime(0.0001, t2 + 0.22);
+            const o2 = AUDIO.ctx.createOscillator();
+            o2.type = "sine";
+            const g2 = gain(0.6);
+            o2.connect(g2);
+            o2.frequency.setValueAtTime(65, t2);
+            o2.frequency.exponentialRampToValueAtTime(50, t2 + 0.22);
+            o2.start(t2);
+            o2.stop(t2 + 0.24);
+            break;
+          }
+
         }
       }
 
@@ -1544,52 +1632,65 @@
           alive: true,
         });
         S.planeSpawned = true;
+        try { playSfx("plane_start"); } catch (e) { }
 
         // các mốc thả bom (5 lần) theo tỉ lệ đường bay
-        const dropAtT = [0.05, 0.25, 0.45, 0.65, 0.85];
+        // const dropAtT = [0.05, 0.25, 0.45, 0.65, 0.85];
 
-        S.planes.push({
-          x: start.x,
-          y: start.y,
-          sx: start.x,
-          sy: start.y,
-          ex: end.x,
-          ey: end.y,
-          dirx,
-          diry,
-          speed: PLANE_CFG.speed,
-          traveled: 0,
-          length: len,
-          dropAtT,
-          dropIndex: 0,
-          alive: true,
-        });
-        S.planeSpawned = true;
+        // S.planes.push({
+        //   x: start.x,
+        //   y: start.y,
+        //   sx: start.x,
+        //   sy: start.y,
+        //   ex: end.x,
+        //   ey: end.y,
+        //   dirx,
+        //   diry,
+        //   speed: PLANE_CFG.speed,
+        //   traveled: 0,
+        //   length: len,
+        //   dropAtT,
+        //   dropIndex: 0,
+        //   alive: true,
+        // });
+        // S.planeSpawned = true;
       }
 
-      // Tính ô va chạm dọc phương "rơi xuống" từ vị trí (x, y0)
       function findBombImpact(x, y0) {
-        const g0 = toGrid(x, y0);
+        const startGy = clamp(Math.floor(y0 / TILE), 0, GRID - 1);
+        const maxFallPx = TILE * 5; // rơi tối đa ~5 ô cho "hợp lý"
+        const maxGy = Math.min(GRID - 1, Math.floor((y0 + maxFallPx) / TILE));
+
         let hitTile = null;
         let gyHit = null;
 
-        // đi xuống theo cột, tìm brick/steel/base đầu tiên
-        for (let gy = g0.gy; gy < GRID; gy++) {
+        for (let gy = startGy; gy <= maxGy; gy++) {
           const gx = clamp(Math.floor(x / TILE), 0, GRID - 1);
           const t = S.map[gy][gx];
           if (!t) continue;
+
+          // Gặp tường/base -> nổ tại đó
           if (t.type === "brick" || t.type === "steel" || t.type === "base") {
             hitTile = { gx, gy };
             gyHit = gy;
             break;
           }
+
+          // Gặp sông (không có cầu) -> cho nổ ở mép ô sông
+          const pos = toPx(gx, gy);
+          if (isInRiver(pos.x, pos.y) && !isOnBridge(pos.x, pos.y)) {
+            gyHit = gy;
+            break;
+          }
         }
-        // nếu không có tường, cho rơi tới mặt đất (hàng cuối)
-        if (gyHit == null) gyHit = GRID - 1;
+
+        // Không gặp chướng ngại trong tầm rơi -> nổ ở cuối tầm
+        if (gyHit == null) gyHit = maxGy;
 
         const targetY = gyHit * TILE + TILE / 2;
         return { hitTile, targetY };
       }
+
 
       function dropBomb(x, y) {
         const info = findBombImpact(x, y);
@@ -1603,7 +1704,7 @@
         });
       }
 
-      function updatePlanes(dt) {
+      function updatePlanes(dt, now) {
         for (let i = S.planes.length - 1; i >= 0; i--) {
           const p = S.planes[i];
           if (!p.alive) {
@@ -1623,21 +1724,48 @@
             p.dropIndex < p.dropAtT.length &&
             tNow >= p.dropAtT[p.dropIndex]
           ) {
-            dropBomb(p.x, p.y);
+            // Chỉ thả khi hiện không có bom đang hoạt động
+            if (!S.bombs.some(b => b.active)) {
+              const ahead = 28;                         // thả hơi trước mũi
+              const lateral = (Math.random() * 32) - 16; // lệch ngang nhẹ
+              const nx = -p.diry, ny = p.dirx;          // pháp tuyến
+              const dropX = clamp(p.x + p.dirx * ahead + nx * lateral, 8, W - 8);
+              const dropY = clamp(p.y + p.diry * ahead + ny * lateral, 8, H - 8);
+              dropBomb(dropX, dropY);
+            }
             p.dropIndex++;
           }
+
 
           // ra khỏi bản đồ -> xóa
           if (p.traveled >= p.length + 60) {
             p.alive = false;
             S.planes.splice(i, 1);
+            // nếu không còn máy bay nào -> tắt tiếng máy bay
+            if (S.planes.length === 0) {
+              try { playSfx("plane_stop"); } catch (e) { }
+            }
           }
         }
       }
 
       function explodeBomb(b) {
         // nổ (hiệu ứng xám)
-        spawnExplosion(b.x, b.targetY, false, "tankGrey");
+        // Nổ lớn hơn (big=true) + thêm vòng xung kích
+        spawnExplosion(b.x, b.targetY, true, "tankGrey");
+        try { playSfx("bomb_blast"); } catch (e) { }
+        S.particles.push({
+          kind: "ring",
+          x: b.x,
+          y: b.targetY,
+          r: 10,
+          rGrow: 220,            // tốc độ nở lớn
+          a: 0.6,
+          aFade: 2.4,            // phai dần
+          color: "rgba(255,255,255,0.85)",
+          life: 0.35
+        });
+
         addScorch(b.x, b.targetY);
 
         // phá tường nếu rơi trúng brick/steel/base (kể cả thép)
@@ -1711,15 +1839,6 @@
 
         ctx.save();
         ctx.translate(p.x, p.y);
-
-        // bóng đổ nhẹ dưới máy bay (giúp nhìn nổi trên nền)
-        // ctx.save();
-        // ctx.globalAlpha = 0.2;
-        // ctx.fillStyle = "#000";
-        // ctx.beginPath();
-        // ctx.ellipse(+8, +10, w * 0.22, h * 0.12, 0, 0, Math.PI * 2);
-        // ctx.fill();
-        // ctx.restore();
 
         const base = Math.atan2(p.diry, p.dirx);
         ctx.rotate(base + (PLANE_CFG.spriteFix || 0));
@@ -2246,7 +2365,7 @@
         }
 
         // cập nhật máy bay & bom
-        updatePlanes(dt);
+        updatePlanes(dt, now);
         updateBombs(dt);
         // Items schedule
         if (S.itemPlan.stars.length && now >= S.itemPlan.stars[0]) {

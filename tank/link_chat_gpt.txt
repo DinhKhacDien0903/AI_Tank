@@ -20,10 +20,10 @@ note 20/8: Điều chỉnh cho cầu dễ sang hơn, đẹp hơn => Done
 
 
 note 21/8:
-- Thêm tình tiết máy bay theo đợt
+- Thêm tình tiết máy bay theo đợt => Done
 - Bỏ bất tử => Done
 - Bỏ xuất hiện star và khiên ngay lập tức, random lại cho giám khảo chơi => Done
-- Chỉnh lại ô mà bomb rơi => ran dom
+- Chỉnh lại ô mà bomb rơi => ran dom => Done
 
 Thêm âm thanh
  - âm thanh khi xe nổ
