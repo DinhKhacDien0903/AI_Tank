@@ -2367,6 +2367,90 @@
         }
       }
 
+      // === Evacuate tanks out of base defense ring when steelifying ===
+      function evacTanksFromBase(layers = 2) {
+        // 1) Tìm tile 'base' (đại bàng) để suy ra vùng bảo vệ (hình chữ nhật bao quanh)
+        let baseTiles = [];
+        for (let gy = 0; gy < GRID; gy++) {
+          for (let gx = 0; gx < GRID; gx++) {
+            const t = S.map[gy][gx];
+            if (t && (t.type === "base" || t.type === "eagle")) {
+              baseTiles.push({ gx, gy });
+            }
+          }
+        }
+        if (baseTiles.length === 0) return;
+
+        // Tâm của cụm base (phòng trường hợp base > 1 tile)
+        let cx = 0, cy = 0;
+        for (const p of baseTiles) { cx += p.gx; cy += p.gy; }
+        cx = Math.round(cx / baseTiles.length);
+        cy = Math.round(cy / baseTiles.length);
+
+        // 2) Hộp giới hạn vùng bảo vệ: base + 2 lớp tường
+        const r = 1 + layers; // base (1) + số lớp
+        const minGX = Math.max(0, cx - r);
+        const maxGX = Math.min(GRID - 1, cx + r);
+        const minGY = Math.max(0, cy - r);
+        const maxGY = Math.min(GRID - 1, cy + r);
+
+        // Helper kiểm tra tile có đi qua được không
+        const isPassable = (gx, gy) => {
+          if (gx < 0 || gy < 0 || gx >= GRID || gy >= GRID) return false;
+          const t = S.map[gy][gx];
+          if (!t) return true; // trống
+          const ty = t.type;
+          // Không cho đứng lên gạch/ thép/ base/ sông
+          if (ty === "brick" || ty === "steel" || ty === "base" || ty === "river") return false;
+          // bush/bridge/ground/...: cho đi qua
+          return true;
+        };
+
+        // 3) Với mỗi tank đang nằm trong vùng, tìm ô gần nhất bên ngoài để đặt
+        const moveToNearestFreeTileOutside = (tank) => {
+          const startGX = Math.floor(tank.x / TILE);
+          const startGY = Math.floor(tank.y / TILE);
+          const maxRadius = 6; // đủ để thoát vùng tường 2 lớp
+
+          for (let radius = 1; radius <= maxRadius; radius++) {
+            // duyệt viền hình vuông (perimeter) để ưu tiên gần nhất
+            for (let dy = -radius; dy <= radius; dy++) {
+              for (let dx = -radius; dx <= radius; dx++) {
+                if (Math.abs(dx) !== radius && Math.abs(dy) !== radius) continue;
+                const gx = startGX + dx;
+                const gy = startGY + dy;
+                if (gx < 0 || gy < 0 || gx >= GRID || gy >= GRID) continue;
+
+                // bỏ qua nếu vẫn còn nằm trong hộp vùng bảo vệ
+                if (gx >= minGX && gx <= maxGX && gy >= minGY && gy <= maxGY) continue;
+
+                if (!isPassable(gx, gy)) continue;
+
+                // đặt tank vào tâm ô an toàn
+                tank.x = gx * TILE + TILE / 2;
+                tank.y = gy * TILE + TILE / 2;
+                if ("vx" in tank) tank.vx = 0;
+                if ("vy" in tank) tank.vy = 0;
+                return true;
+              }
+            }
+          }
+          return false;
+        };
+
+        // 4) Quét tất cả tanks (player + địch) đang ở trong vùng và đẩy ra
+        for (const t of S.tanks) {
+          if (!t || t.dead) continue;
+          const half = (t.size || 24) / 2;
+          const l = t.x - half, rpx = t.x + half, u = t.y - half, d = t.y + half;
+          // Nếu bất kỳ phần nào của bounding box nằm trong hộp vùng bảo vệ
+          const insideX = Math.floor(l / TILE) <= maxGX && Math.floor(rpx / TILE) >= minGX;
+          const insideY = Math.floor(u / TILE) <= maxGY && Math.floor(d / TILE) >= minGY;
+          if (insideX && insideY) {
+            moveToNearestFreeTileOutside(t);
+          }
+        }
+      }
 
       function update(dt, now) {
         updateWind(dt, now);
@@ -2485,6 +2569,7 @@
               } else {
                 S.score += 50;
                 setBaseWalls("steel");
+                evacTanksFromBase(2); // NEW: đẩy mọi tank đang trong 2 lớp tường ra ô đất trống gần nhất
                 S.shovelUntil = performance.now() + 20000;
               }
               syncUI();
