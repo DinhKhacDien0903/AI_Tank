@@ -3,6 +3,7 @@ link 2: https://chatgpt.com/share/68a499c7-aec4-800e-bd5b-5ec9c4d7039d
 link 3: https://chatgpt.com/share/68a5beff-d4e0-800e-b015-9fbd61da37c0
 link4: https://chatgpt.com/share/68a5bee8-4e74-800e-8000-14dc215ef29b
 link5: https://chatgpt.com/share/68a60d46-f324-800e-aa45-e3f01ee3b386
+link6: https://chatgpt.com/share/68a6d66c-e280-800e-8761-fc8730e34681
 
 
 
