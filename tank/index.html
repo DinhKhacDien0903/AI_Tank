@@ -256,7 +256,7 @@
       const PLAY_SECONDS = 180; // 3 minutes
       // === Airplane & Bomb config ===
       const PLANE_CFG = {
-        startAfter: 5, // xuất hiện sau 35s
+        startAfter: 30, // xuất hiện sau 30s
         speed: 170, // nhanh gấp ~2 lần tank người chơi (100)
         dropCount: 6, // mỗi lần bay thả 5 quả bom
         size: 22, // kích thước vẽ máy bay (px)
@@ -1321,6 +1321,7 @@
         planes: [], // máy bay đang bay
         bombs: [], // bom đang rơi
         planeSpawned: false, // đã spawn máy bay hay chưa (chỉ 1 chiếc/lượt chơi)
+        planeCuePlayed: false,
         bridges: [],
         riverLabelPos: 0.32,
         wind: {
@@ -1632,28 +1633,7 @@
           alive: true,
         });
         S.planeSpawned = true;
-        try { playSfx("plane_start"); } catch (e) { }
-
-        // các mốc thả bom (5 lần) theo tỉ lệ đường bay
-        // const dropAtT = [0.05, 0.25, 0.45, 0.65, 0.85];
-
-        // S.planes.push({
-        //   x: start.x,
-        //   y: start.y,
-        //   sx: start.x,
-        //   sy: start.y,
-        //   ex: end.x,
-        //   ey: end.y,
-        //   dirx,
-        //   diry,
-        //   speed: PLANE_CFG.speed,
-        //   traveled: 0,
-        //   length: len,
-        //   dropAtT,
-        //   dropIndex: 0,
-        //   alive: true,
-        // });
-        // S.planeSpawned = true;
+        // try { playSfx("plane_start"); } catch (e) { }
       }
 
       function findBombImpact(x, y0) {
@@ -2213,6 +2193,10 @@
         S.planes = [];
         S.bombs = [];
         S.planeSpawned = false;
+        try { playSfx("plane_stop"); } catch (e) { }
+        if (typeof planeCueEl !== "undefined" && planeCueEl) {
+          try { planeCueEl.pause(); planeCueEl.currentTime = 0; } catch (e) { }
+        }
         S.spawn = {
           active: 0,
           basicLeft: TOTAL_BASIC,
@@ -2249,6 +2233,11 @@
       function endGame(win) {
         if (!S.running) return;
         S.running = false;
+        // Tắt HẲN toàn bộ âm thanh liên quan đến máy bay/cue
+        try { playSfx("plane_stop"); } catch (e) { }
+        if (typeof planeCueEl !== "undefined" && planeCueEl) {
+          try { planeCueEl.pause(); planeCueEl.currentTime = 0; } catch (e) { }
+        }
         S.status = win ? "won" : "lost";
         try {
           playSfx(win ? "win" : "lose");
@@ -2358,8 +2347,50 @@
         );
       }
 
+      // === Âm thanh báo máy bay (MP3) — phát trước khi máy bay xuất hiện 10s ===
+      const PLANE_CUE_SRC = "sound_plane.mp3"; // đặt file cạnh index.html
+      let planeCueEl = null;
+
+      function playPlaneCue() {
+        // Tôn trọng nút bật/tắt âm và volume của game
+        if (typeof AUDIO !== "undefined" && AUDIO.enabled === false) return;
+
+        if (!planeCueEl) {
+          planeCueEl = document.createElement("audio");
+          planeCueEl.src = PLANE_CUE_SRC;
+          planeCueEl.preload = "auto";
+          // Nếu đang dùng WebAudio master, nối vào master để ăn volume slider
+          try {
+            if (AUDIO && AUDIO.ctx && AUDIO.master && !planeCueEl._node) {
+              planeCueEl._node = AUDIO.ctx.createMediaElementSource(planeCueEl);
+              planeCueEl._node.connect(AUDIO.master);
+            }
+          } catch (e) {
+            // ignore (trình duyệt có thể không cho createMediaElementSource nếu gọi nhiều lần)
+          }
+        }
+
+        try {
+          planeCueEl.currentTime = 0;
+          planeCueEl.play();
+        } catch (e) {
+          // ignore autoplay restrictions: người chơi đã bấm Start nên thường sẽ chơi được
+        }
+      }
+
+
       function update(dt, now) {
         updateWind(dt, now);
+        // === Phát âm thanh báo trước 10s ===
+        const cueAt = Math.max(0, PLANE_CFG.startAfter - 10);
+        // Khi game mới/restart -> elapsed quay về nhỏ hơn cueAt, reset cờ để lần sau phát lại
+        if (S.elapsed < cueAt) {
+          S.planeCuePlayed = false;
+        } else if (S.running && !S.planeCuePlayed && !S.planeSpawned) {
+          playPlaneCue();
+          S.planeCuePlayed = true;
+        }
+
         if (!S.planeSpawned && S.elapsed >= PLANE_CFG.startAfter) {
           spawnPlane();
         }
@@ -2367,6 +2398,17 @@
         // cập nhật máy bay & bom
         updatePlanes(dt, now);
         updateBombs(dt);
+
+        // === Engine sound chỉ bật khi ĐANG CHƠI và có máy bay nằm TRONG bản đồ ===
+        const anyPlaneInView = S.planes.some(p =>
+          p.x >= 0 && p.x <= W && p.y >= 0 && p.y <= H
+        );
+
+        if (S.running && anyPlaneInView) {
+          if (!AUDIO._plane) { try { playSfx("plane_start"); } catch (e) { } }
+        } else {
+          if (AUDIO._plane) { try { playSfx("plane_stop"); } catch (e) { } }
+        }
         // Items schedule
         if (S.itemPlan.stars.length && now >= S.itemPlan.stars[0]) {
           S.itemPlan.stars.shift();
